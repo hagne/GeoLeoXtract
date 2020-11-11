@@ -1,5 +1,5 @@
 import xarray as xr
-# import pathlib as pl
+import pathlib as pl
 import numpy as np
 # import cartopy.crs as ccrs
 # import metpy 
@@ -7,6 +7,164 @@ import numpy as np
 # from datetime import datetime, timedelta
 from mpl_toolkits.basemap import Basemap
 from pyproj import Proj
+import urllib
+from pyquery import PyQuery as pq
+import pandas as pd
+import matplotlib.pyplot as plt
+
+
+
+class SatelliteDataQuery(object):
+    def __init__(self):
+        self._base_url = 'http://home.chpc.utah.edu/~u0553130/Brian_Blaylock/cgi-bin/goes16_download.cgi'
+        self.path2savefld = pl.Path('/mnt/data/data/goes/')
+        self.path2savefld.mkdir(exist_ok=True)
+        html = urllib.request.urlopen(self._base_url).read()
+        self._doc = pq(html)
+        self.query = pd.DataFrame(columns=['source', 'satellite', 'domain', 'product', 'date', 'hour', 'minute', 'url2file', 'url_inter','inbetween_page'])
+        self._url_inter = pd.DataFrame(columns=['url', 'sublinks'])
+    @property
+    def available_products(self):
+        # available products
+        products = [i for i in self._doc.find('select') if i.name == 'product'][0]
+        products_values = [i.attrib["value"]for  i in products]
+#         print('\n'.join([f'{i.attrib["value"]}:\t {i.text}' for  i in products]))
+        return products_values
+    @property
+    def available_domains(self):
+        domains = [i for i in self._doc.find('select') if i.name == 'domain'][0]
+        domains_values = [i.attrib["value"]for  i in domains]
+#         print('\n'.join([f'{i.attrib["value"]}:\t {i.text}' for  i in domains]))
+        return domains_values
+
+    @property
+    def available_satellites(self):
+        # available satellites
+        satellites = [i for i in self._doc.find('input') if i.name == 'satellite']
+        satellites_values = [i.attrib['value'] for i in satellites] #[i.attrib["value"][-2:] for i in satellites]
+#         print('\n'.join([f'{i.attrib["value"][-2:]}: {i.attrib["value"]}' for  i in satellites]))
+        return satellites_values
+
+    def _attache_intermeidate_linkes(self):
+        get_inter_url = lambda row: self._base_url + '?' + '&'.join([f'{i[0]}={i[1]}' for i in row.reindex(['source', 'satellite', 'domain', 'product', 'date', 'hour']).items()])
+        self.query['url_inter'] = self.query.apply(get_inter_url, axis = 1)
+
+    def _get_intermediate_pages(self):
+        for idx,row in self.query.iterrows():
+            intermediate_url =  row.url_inter
+        #     break
+
+            if intermediate_url not in self._url_inter.url.values:
+
+                html_inter = urllib.request.urlopen(intermediate_url).read()
+                doc_inter = pq(html_inter)
+
+                sub_urls = []
+                for link in doc_inter('a'):
+                #     print(link.attrib['href'])
+                    if 0:
+                        if 'noaa-goes16.s3' in link.attrib['href']:
+                            print(link.attrib['href'])
+                            break
+                    else:
+                        if len(link.getchildren()) == 0:
+                            continue
+                        if not 'name' in link.getchildren()[0].attrib.keys():
+                            continue
+
+                        if link.getchildren()[0].attrib['name'] == 'fxx':
+                            sub_urls.append(link.attrib['href'])
+                #             print(link.attrib['href'])
+                #             break
+
+                sub_urls = pd.DataFrame(sub_urls, columns = ['urls'])
+
+                sub_urls['datetime']= sub_urls.apply(lambda row: pd.to_datetime(row.urls.split('/')[-1].split('_')[-3][1:-3], format = '%Y%j%H%M'), axis=1)
+
+
+                self._url_inter = self._url_inter.append(dict(url = intermediate_url,
+                                           sublinks = sub_urls), ignore_index= True)
+                assert(not isinstance(row.minute, type(None))), 'following minutes are available ... choose! '+ ', '.join([str(i.minute) for i in sub_urls.datetime])
+
+            else:
+                pass
+#                 print('gibs schon')
+                
+    def _get_link2files(self):
+        for idx,row in self.query.iterrows():
+            sublinks = self._url_inter[self._url_inter.url == row.url_inter].sublinks.iloc[0]
+            for sidx, srow in sublinks.iterrows():
+                if srow.datetime.minute == int(row.minute):
+                    row.url2file = srow.urls
+                       
+    def _generate_save_path(self):
+        def gen_output_path(self,row):
+            fld = self.path2savefld.joinpath(row['product']) 
+            fld.mkdir(exist_ok=True)
+            
+            try: 
+                p2f = fld.joinpath(row.url2file.split('/')[-1])
+            except:
+                print(f'promblem executing " p2f = fld.joinpath(row.url2file.split('/')[-1])" in {row}, with {fld}')
+                assert(False)
+            
+            return p2f
+        self.query['path2save'] = self.query.apply(lambda row: gen_output_path(self,row), axis = 1)
+    
+    @property
+    def workplan(self):
+        self._get_link2files()
+        self._generate_save_path()
+        self.query['file_exists'] = self.query.apply(lambda row: row.path2save.is_file(), axis = 1)
+        self._workplan = self.query[~self.query.file_exists]
+        return self._workplan
+        
+    def add_query(self, source = 'aws',
+                     satellite = 'noaa-goes16',
+                     domain = 'C',
+                     product = 'ABI-L2-AOD',
+                     date = '2020-06-27',
+                     hour = 20,
+                     minute = [21, 26]):
+        
+        if not isinstance(minute, list):
+            minute = [minute]
+        if not isinstance(hour, list):
+            hour = [hour]
+            
+        for qhour in hour:
+            for qmin in minute:
+                qdict = dict(source = source,
+                         satellite = satellite,
+                         domain = domain,
+                         product = product,
+                         date = date,
+                         hour = f'{qhour:02d}',
+                         minute = f'{qmin:02d}'
+                         )
+                self.query = self.query.append(qdict, ignore_index = True)
+        assert(satellite in self.available_satellites)
+        assert(domain in self.available_domains)
+        assert(product in self.available_products)
+        
+        self._attache_intermeidate_linkes()
+        self._get_intermediate_pages()
+        # drop line if minute is None
+        for idx, row in self.query.iterrows():
+            if isinstance(row.minute, type(None)):
+                self.query.drop(idx, inplace=True)
+                
+    def download_query(self, test = False):
+        for idx, row in self.workplan.iterrows():
+            print(f'downloading {row.url2file}', end = ' ... ')
+            if row.path2save.is_file():
+                print('file already exists ... skip')
+            else:
+                urllib.request.urlretrieve(row.url2file, filename=row.path2save)
+                print('done')
+            if test:
+                break
+
 
 class GeosSatteliteProducts(object):
     def __init__(self,file):
