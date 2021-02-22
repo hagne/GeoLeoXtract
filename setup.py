@@ -19,6 +19,9 @@ setup(
     license="MIT",
     keywords="nesdis_gml_synergy",
     url="https://github.com/hagne/nesdis_gml_synergy",
+    scripts=['scripts/scrape_sat', 
+             # 'scripts/hrrr_smoke2gml'
+             ],
     # install_requires=['numpy','pandas'],
     # extras_require={'plotting': ['matplotlib'],
     #                 'testing': ['scipy']},
