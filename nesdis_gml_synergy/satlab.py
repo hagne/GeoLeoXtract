@@ -11,12 +11,187 @@ import urllib as _urllib
 from pyquery import PyQuery as _pq
 import pandas as _pd
 import matplotlib.pyplot as _plt
+import mpl_toolkits.basemap as _basemap
+import os as _os
 
-def open_class_file(p2f):
+def open_file(p2f):
     ds = _xr.open_dataset(p2f)
-    if ds.attrs['dataset_name'].split('_')[1] == 'ABI-L2-AODC-M6':
+    product_name = ds.attrs['dataset_name'].split('_')[1]
+    if product_name == 'ABI-L2-AODC-M6':
         classinst = ABI_L2_AODC_M6(ds)
+    elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
+        classinst = ABI_L2_MCMIPC_M6(ds)
+    else:
+        classinst = GeosSatteliteProducts(ds)
+        # assert(False), f'The product {product_name} is not known yet, programming required.'
     return classinst
+
+class SatelliteMovie(object):
+    def __init__(self, 
+                 path2fld_sat = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI-L2-MCMIP/',
+                 path2fld_fig = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI-L2-MCMIP_figures/',
+                 path2fld_movies = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI-L2-MCMIP_movies/',
+                 ):
+        
+
+        self.path2fld_sat = _pl.Path(path2fld_sat)
+        self.path2fld_fig = _pl.Path(path2fld_fig)
+        self.path2fld_movies = _pl.Path(path2fld_movies)
+        
+#         path2fld_fig.mkdir(exist_ok=True)
+        # properties
+        self._workplan = None
+        
+    @property
+    def workplan(self):
+        if isinstance(self._workplan, type(None)):
+            workplan = _pd.DataFrame(self.path2fld_sat.glob('*.nc'), columns=['path2sat'])
+            workplan.index = workplan.apply(lambda row: _pd.to_datetime(row.path2sat.name.split('_')[-3][1:-1], format = '%Y%j%H%M%S'), axis = 1)
+            workplan['path2fig'] = workplan.apply(lambda row: self.path2fld_fig.joinpath(row.path2sat.name.replace('.nc','.png')), axis = 1)
+            workplan.sort_index(inplace=True)
+            self._workplan = workplan
+        return self._workplan
+    
+    @workplan.setter
+    def workplan(self, new_workplan):
+        self._workplan = new_workplan
+        return
+        
+    def plot_single(self, 
+                    resolution          = 'i',
+                    width               = 4.5e6,
+                    height              = 2.7e6,
+                    lat_0               = 40.12498,
+                    lon_0               = -99.2368,
+                    costlines           = True,
+                    row                 = 10,
+                    sites               = None,
+                    first               = True,
+                    save                = True,
+                    dpi                 = 300,
+                    overwrite           = True,
+                    use_active_settings = False,):
+        
+        # read the file and make the time stamp
+        if not type(row) == _pd.Series:
+            row = self.workplan.iloc[row]
+            
+        if use_active_settings:
+            resolution = self._a_resolution
+            width      = self._a_width     
+            height     = self._a_height    
+            lat_0      = self._a_lat_0     
+            lon_0      = self._a_lon_0        
+            sites      = self._a_sites     
+            dpi        = self._a_dpi     
+            costlines  = self._a_costlines
+        else:
+            self._a_resolution = resolution
+            self._a_width      = width     
+            self._a_height     = height    
+            self._a_lat_0      = lat_0     
+            self._a_lon_0      = lon_0        
+            self._a_sites      = sites     
+            self._a_dpi        = dpi 
+            self._a_costlines  = costlines
+            
+        mcmip = open_file(row.path2sat)
+        timestamp = _pd.to_datetime(mcmip.ds.attrs['time_coverage_start'])
+        tstxt = f'{timestamp.date()}\n{timestamp.time()}'.split('.')[0]
+        
+        if first:
+            # make the basemap instanc 
+            bmap = _basemap.Basemap(resolution=resolution, projection='aea', 
+                                   area_thresh=5000, 
+                                         width=width, height=height, 
+                #                          lat_1=38.5, lat_2=38.5, 
+                                         lat_0=lat_0, lon_0=lon_0)
+            bmap.drawstates(zorder = 1)
+            if costlines:
+                bmap.drawcoastlines(linewidth = 0.5, zorder = 1)
+            bmap.drawcountries(linewidth = 1, zorder = 1)
+            a = _plt.gca()
+            if sites:
+                a, _ = sites.plot(bmap = bmap, projection='aea',
+            #                             width = width, height = height,
+                                        background=None, 
+                            station_symbol_kwargs={'markerfacecolor':'none', 
+                                                 'markersize':5, 
+                                                 'markeredgewidth':0.5},
+                            station_label_format='')
+            self._bmap_active = bmap
+        else:
+            bmap = self._bmap_active
+            a = _plt.gca()
+            self._txt_active.remove()
+            self._pc_active.remove()
+            
+        out = mcmip.plot_true_color(bmap = bmap, 
+                              contrast = 200, gamma=2.3,zorder = 0,
+                             )
+        if out == False:
+            self._pc_active = txt = a.text(0,0,'', transform=a.transAxes, zorder = 10,
+                                             color = 'black',#colors[1], 
+#                                              bbox=dict(facecolor=[1,1,1,0.7], linewidth = 0)
+                                          )
+            
+        else:
+            self._pc_active = out['pc']
+            
+        txt = a.text(0.05,0.85,tstxt, transform=a.transAxes, zorder = 10,
+                     color = 'black',#colors[1], 
+                     bbox=dict(facecolor=[1,1,1,0.7], linewidth = 0))
+        self._txt_active = txt
+        
+        f = _plt.gcf()
+        f.patch.set_alpha(0)
+        if save:
+            if row.path2fig.is_file():
+                if not overwrite:
+                    print(f'file exists, saving skipped! ({row.path2fig})')
+                    return
+            f.savefig(row.path2fig, dpi = dpi, bbox_inches = 'tight')
+        
+    def create_images(self, overwrite = False, use_active_settings = True, verbose = False):
+        first = True
+        if not overwrite:
+            workplan = self.workplan[~self.workplan.path2fig.apply(lambda x: x.is_file())]
+        else:
+            workplan = self.workplan
+        print(f'Number of files to process: {workplan.shape[0]}')
+        for e,(idx, row) in enumerate(workplan.iterrows()):
+            if verbose:
+                print(row.path2sat)
+            self.plot_single(row = row, first = first, overwrite = False, use_active_settings = use_active_settings)
+            first = False
+#             if e == 2:
+#                 break
+    def create_movies(self, overwrite = False, name = ''):
+        dates = self.workplan.apply(lambda row: row.name.date(), axis = 1)
+        groups = self.workplan.groupby(dates)
+        for date,grp in groups:
+            path2file_movie = self.path2fld_movies.joinpath(f'{name}_{date}.mp4'.replace('-','_'))
+            path2file_movie_file_list = self.path2fld_movies.joinpath(f'{name}_{date}.txt'.replace('-','_'))
+            if path2file_movie.is_file():
+                if overwrite:
+                    path2file_movie.unlink()
+                else:
+                    print(f'Movie file exists, skip! ({path2file_movie})')
+
+            # generate the file that contains the list of files that go into the movie
+            with open(path2file_movie_file_list, mode = 'w') as raus:
+                for idx, row in grp.iterrows():
+            #         pass
+                    raus.write(f"file '{row.path2fig}'\n")
+
+            fps = 5
+            command = "ffmpeg -r {fps} -f concat -safe 0 -i '{mylist}'  '{pathout}'".format(fps=fps,
+                                                                                mylist = path2file_movie_file_list,
+            #                                                                     folder=save_figures2folder,
+                                                                                pathout=path2file_movie)
+            out = _os.system(command)
+            if out != 0:
+                print('something went wrong with creating movie from saved files (error code {}).\n command:\n{}'.format(out, command))
 
 class SatelliteDataQuery(object):
     def __init__(self):
@@ -216,25 +391,88 @@ class GeosSatteliteProducts(object):
             self._lonlat = (lons, lats) #dict(lons = lons, 
 #                                     lats = lats)
         return self._lonlat
-            # Assign the pixels showing space as a single point in the Gulf of Alaska
-    #             where = _np.isnan(channels_rgb['red'])
-    #             lats[where] = 57
-    #             lons[where] = -152
     
-    def plot(self, param):
+    # @_numba.jit(nopython=True)
+    def get_closest_gridpoint(self, lon_lat_sites):
+        """using numba only saved me 5% of the time"""
+    #     out = {}
+        if type(lon_lat_sites).__name__ == 'Station':
+            isstation = lon_lat_sites
+            lon_lat_sites = _np.array([[lon_lat_sites.lon, lon_lat_sites.lat]])
+        else:
+            isstation = False
+        lon_g, lat_g = self.lonlat
+        # armins columns: argmin_x, argmin_y, lon_g, lat_g, lon_s, lat_s, dist_min
+        out = _np.zeros((lon_lat_sites.shape[0], 7))
+        out_dict = {}
+        
+    #     if len(lon_g.shape) == 3:
+    #         lon_g = lon_g[0,:,:]
+    #         lat_g = lat_g[0,:,:]
+        index = []
+        for e,site in enumerate(lon_lat_sites):
+            if type(isstation).__name__ == 'Station':
+                idx = isstation.name
+            else:
+                idx = e
+            index.append(idx)
+            
+            lon_s, lat_s = site
+        #     lon_s = site.lon
+        #     lat_s = site.lat
+    
+            p = _np.pi / 180
+            a = 0.5 - _np.cos((lat_s-lat_g)*p)/2 + _np.cos(lat_g*p) * _np.cos(lat_s*p) * (1-_np.cos((lon_s-lon_g)*p))/2
+            dist = 12742 * _np.arcsin(_np.sqrt(a))
+    
+            # get closest
+            argmin = dist.argmin()//dist.shape[1], dist.argmin()%dist.shape[1]
+            out[e,:2] = argmin        
+            out[e,2] = lon_g[argmin]
+            out[e,3] = lat_g[argmin]
+            out[e,4] = lon_s
+            out[e,5] = lat_s
+            out[e,6] = dist[argmin]
+        closest_point = _pd.DataFrame(out, columns = ['argmin_x', 'argmin_y','lon_gritpoint', 'lat_gridpoint', 'lon_station', 'lat_station', 'distance_station_gridpoint'], index = index)
+        out_dict['closest_point'] = closest_point
+        out_dict['last_distance_grid'] = dist
+        return out_dict
+    
+    def get_resolution(self, at_site):
+        site = at_site
+        out = self.get_closest_gridpoint(site)
+    
+        closest_point = out['closest_point'].iloc[0]
+        dist = out['last_distance_grid']
+    
+        closest_point
+    
+        ax, ay = int(closest_point.argmin_x), int(closest_point.argmin_y)
+    
+        # dist[ax+1: ax+2, ay]
+    
+        bla = 10
+        resx = ((dist[ax-bla: ax-bla+1, ay]/bla) + (dist[ax+bla: ax+bla+1, ay]/bla))/2
+        resy = ((dist[ax, ay-bla: ay-bla+1]/bla) + (dist[ax, ay+bla: ay+bla+1]/bla))/2
+        out = _pd.DataFrame({'lon':resx, 'lat': resy})
+        return out
+    
+    def plot(self, variable, bmap = None, **pcolor_kwargs):
         lons,lats = self.lonlat
-        bmap = _Basemap(resolution='c', projection='aea', area_thresh=5000, 
-                 width=3000*3000, height=2500*3000, 
-    #                          lat_1=38.5, lat_2=38.5, 
-                 lat_0=38.5, lon_0=-97.5)
+        
+        if isinstance(bmap, type(None)):
+            bmap = _Basemap(resolution='c', projection='aea', area_thresh=5000, 
+                     width=3000*3000, height=2500*3000, 
+        #                          lat_1=38.5, lat_2=38.5, 
+                     lat_0=38.5, lon_0=-97.5)
     
-        bmap.drawcoastlines()
-        bmap.drawcountries()
-        bmap.drawstates()
-        bmap.pcolormesh(lons, lats, self.ds[param], latlon=True, zorder = 0)
+            bmap.drawcoastlines()
+            bmap.drawcountries()
+            bmap.drawstates()
+        bmap.pcolormesh(lons, lats, self.ds[variable], latlon=True, **pcolor_kwargs)
         return bmap
 
-class or_abi_l2_mcmipc(GeosSatteliteProducts):
+class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
 #         self._varname4test = 'CMI_C02'
@@ -244,8 +482,12 @@ class or_abi_l2_mcmipc(GeosSatteliteProducts):
                         gamma = 1.8,#2.2, 
                         contrast = 130, #105
                         projection = None,
-                        bmap = None
+                        bmap = None,
+                        width = 5e6,
+                        height = 3e6,
+                        **kwargs,
                        ):
+        out = {}
         channels_rgb = dict(red = self.ds['CMI_C02'].data.copy(),
                             green = self.ds['CMI_C03'].data.copy(),
                             blue = self.ds['CMI_C01'].data.copy())
@@ -257,7 +499,11 @@ class or_abi_l2_mcmipc(GeosSatteliteProducts):
         for chan in channels_rgb:
             col = channels_rgb[chan]
             # Apply range limits for each channel. RGB values must be between 0 and 1
-            new_col = col / col[~_np.isnan(col)].max()
+            try:
+                new_col = col / col[~_np.isnan(col)].max()
+            except ValueError:
+                print('No valid data in at least on of the channels')
+                return False
             
             # apply gamma
             if not isinstance(gamma, type(None)):
@@ -290,7 +536,7 @@ class or_abi_l2_mcmipc(GeosSatteliteProducts):
             # Make a new map object Lambert Conformal projection
             if not isinstance(bmap,_Basemap):
                 bmap = _Basemap(resolution='i', projection='aea', area_thresh=5000, 
-                             width=3000*3000, height=2500*3000, 
+                             width=width, height=height, 
     #                          lat_1=38.5, lat_2=38.5, 
                              lat_0=38.5, lon_0=-97.5)
 
@@ -311,11 +557,13 @@ class or_abi_l2_mcmipc(GeosSatteliteProducts):
             colortuple = _np.insert(colortuple, 3, 1.0, axis=1)
 
             # We need an array the shape of the data, so use R. The color of each pixel will be set by color=colorTuple.
-            pc = bmap.pcolormesh(lons, lats, channels_rgb['red'], color=colortuple, linewidth=0, latlon=True, zorder = 0)
+            pc = bmap.pcolormesh(lons, lats, channels_rgb['red'], color=colortuple, linewidth=0, latlon=True, **kwargs)
             pc.set_array(None) # Without this line the RGB colorTuple is ignored and only R is plotted.
-
+            out['pc'] = pc
 #             plt.title('GOES-16 True Color', loc='left', fontweight='semibold', fontsize=15)
 #             plt.title('%s' % scan_start.strftime('%d %B %Y %H:%M UTC'), loc='right');
+            out['bmap'] = bmap
+        return out
 
 class ABI_L2_AODC_M6(GeosSatteliteProducts):
     def __init__(self, *args):
