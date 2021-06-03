@@ -13,19 +13,211 @@ import pandas as _pd
 import matplotlib.pyplot as _plt
 import mpl_toolkits.basemap as _basemap
 import os as _os
+import numba as _numba
+import multiprocessing as _mp
+import functools as _functools
 
-def open_file(p2f):
+
+def open_file(p2f, verbose = False):
     ds = _xr.open_dataset(p2f)
     product_name = ds.attrs['dataset_name'].split('_')[1]
+    if verbose:
+        print(f'product name: {product_name}')
     if product_name == 'ABI-L2-AODC-M6':
         classinst = ABI_L2_AODC_M6(ds)
     elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
         classinst = ABI_L2_MCMIPC_M6(ds)
+    elif product_name == 'ABI-L2-LSTC-M6':
+        classinst = ABI_L2_LSTC_M6(ds)
+        if verbose:
+            print(f'identified as: ABI-L2-LSTC-M6')
     else:
         classinst = GeosSatteliteProducts(ds)
+        if verbose:
+            print('not identified')
         # assert(False), f'The product {product_name} is not known yet, programming required.'
     return classinst
 
+
+class ProjectionProject(object):
+    def __init__(self,sites,
+                 # list_of_files = None,
+                  # download_files = False,
+                  # file_processing_state = 'raw',
+                  path2folder_raw = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI_L2_AODC_M6_G16/', 
+                  path2interfld = '/mnt/telg/tmp/class_tmp_inter', 
+                  path2resultfld = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/',
+                  generate_missing_folders = False):
+        self.sites = sites
+        self.list_of_files = None
+        self.download_files = False
+        self.path2folder_raw = _pl.Path(path2folder_raw)
+        self.path2interfld_point = _pl.Path(path2interfld).joinpath('point')
+        self.path2interfld_area = _pl.Path(path2interfld).joinpath('area')
+        self.path2resultfld_point = _pl.Path(path2resultfld).joinpath('point')
+        self.path2resultfld_area = _pl.Path(path2resultfld).joinpath('area')
+        outputfld = [self.path2interfld_point, self.path2interfld_area , self.path2resultfld_point, self.path2resultfld_area]
+        if generate_missing_folders:
+            for fld in outputfld:
+                try:
+                    fld.mkdir(exist_ok=True)
+                except:
+                    fld.parent.mkdir(exist_ok=True)
+        
+        for fld in outputfld:
+            assert(fld.is_dir()), f'no such folder {fld.as_posix()}, set generate_missing_folders to true to generate folders'
+        
+        self._workplan = None
+        
+        
+    @property
+    def workplan(self):
+        # list_of_files = None,
+        #           download_files = False,
+        #           file_processing_state = 'raw',
+        #           path2folder_raw = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI_L2_AODC_M6_G16/', 
+        #           path2interfld = '/mnt/telg/tmp/class_tmp_inter', 
+        #           path2resultfld = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/'):
+        """
+        
+    
+        Parameters
+        ----------
+        list_of_files : TYPE, optional
+            If this is None then the workplan for the concatination is generated 
+            (the files in the intermediate folder will be used). The default is 
+            None.
+        file_location: str ('ftp', 'local'), optional
+        file_processing_state: str ('raw', 'intermediate'), optional        
+        path2folder_raw : TYPE, optional
+            DESCRIPTION. The default is '/mnt/telg/tmp/class_tmp/'.
+        path2interfld : TYPE, optional
+            DESCRIPTION. The default is '/mnt/telg/tmp/class_tmp_inter'.
+        path2resultfld : TYPE, optional
+            DESCRIPTION. The default is '/mnt/telg/projects/GOES_R_ABI/data/sattelite_at_gml'.
+    
+        Returns
+        -------
+        df : TYPE
+            DESCRIPTION.
+    
+        """
+        if isinstance(self._workplan, type(None)):
+            if not self.download_files:
+                # if file_processing_state == 'intermediate':
+                if 0:
+                    pass
+                    if isinstance(self.list_of_files, type(None)):
+                        df = _pd.DataFrame(list(self.path2interfld.glob('*.nc')), columns=['path2intermediate_file'])
+                    else:
+                        assert(False), 'programming required'
+                # elif file_processing_state == 'raw':
+                elif 1: 
+                    if isinstance(self.list_of_files, type(None)):
+                        df = _pd.DataFrame(list(self.path2folder_raw.glob('*.nc')), columns=['path2tempfile'])
+                    else:
+                        assert(False), 'programming required'
+                    
+                    df['path2intermediate_file_point'] =df.apply(lambda row: self.path2interfld_point.joinpath(row.path2tempfile.name), axis = 1)
+                    df['path2intermediate_file_area'] =df.apply(lambda row: self.path2interfld_area.joinpath(row.path2tempfile.name), axis = 1)
+                else:
+                    assert(False), 'not an option'
+                    
+            elif self.download_files:
+                assert(False), 'this will probably not work'
+                df = _pd.DataFrame(self.list_of_files, columns=['fname_on_ftp'])
+                df['path2tempfile'] = df.apply(lambda row: self.path2folder_raw.joinpath(row.fname_on_ftp), axis = 1)
+                df['path2intermediate_file'] =df.apply(lambda row: self.path2interfld.joinpath(row.fname_on_ftp), axis = 1)
+            else:
+                assert(False), f'{self.download_files} is not an option for file_location ... valid: (local, ftp)'
+            # return df
+            df['product_name'] = df.apply(lambda row: row.path2intermediate_file_point.name.split('_')[1], axis = 1)
+            df['satellite'] =df.apply(lambda row: row.path2intermediate_file_point.name.split('_')[2], axis = 1)
+            df['datetime_start'] =df.apply(lambda row: _pd.to_datetime(row.path2intermediate_file_point.name.split('_')[3][1:-1], format = '%Y%j%H%M%S'), axis = 1)
+            df['datetime_end'] =df.apply(lambda row: _pd.to_datetime(row.path2intermediate_file_point.name.split('_')[4][1:-1], format = '%Y%j%H%M%S'), axis = 1)
+            
+        
+            df['path2result_point'] = df.apply(lambda row: self.path2resultfld_point.joinpath(f'{row.product_name}_{row.satellite}_{row.datetime_start.strftime("%Y%m%d")}.nc'.replace('-', '_')), axis = 1)
+            df['path2result_area'] = df.apply(lambda row: self.path2resultfld_area.joinpath(f'{row.product_name}_{row.satellite}_{row.datetime_start.strftime("%Y%m%d")}.nc'.replace('-', '_')), axis = 1)
+            # check if final file exists
+            df['result_exists'] = df.apply(lambda row: row.path2result_point.is_file(), axis = 1)
+            df = df[~df.result_exists]
+            df['intermediate_exists'] = df.apply(lambda row: row.path2intermediate_file_point.is_file(), axis = 1)
+            df = df[~df.intermediate_exists]
+            df.sort_values('datetime_start', inplace=True)
+            self._workplan = df
+        return self._workplan
+    
+    @workplan.setter
+    def workplan(self, new_workplan):
+        self._workplan = new_workplan
+        
+    def process(self, no_of_cpu = 3, test = False):
+
+        # self.remove_artefacts()
+        
+        if test == 2:
+            wpt = self.workplan.iloc[:1]
+        elif test == 3:
+            wpt = self.workplan.iloc[:no_of_cpu]
+        else:
+            wpt = self.workplan
+        
+        if no_of_cpu == 1:
+            for idx, row in wpt.iterrows():
+                wpe = WorkplanEntry(row, project = self)
+                wpe.process()
+        else:
+            pool = _mp.Pool(processes=no_of_cpu)
+            idx, rows = zip(*list(wpt.iterrows()))
+            # out['pool_return'] = pool.map(partial(process_workplan_row, **{'ftp_settings': ftp_settings, 'sites': sites}), rows)
+            out = {}
+            pool_return = pool.map(_functools.partial(WorkplanEntry, **{'project': self, 'autorun': True}), rows)
+            # out['pool_return'] = pool_return
+            
+            pool.close() # no more tasks
+            pool.join()
+        # if test == False:
+        #     concat = Concatonator(path2scraped_files = self.path2data,
+        #                  path2concat_files = self.path2concatfiles,)
+        #     concat.save()
+        #     out['concat'] = concat
+        return 
+
+class WorkplanEntry(object):
+    def __init__(self, workplanrow, project = None, autorun = False):
+        self.project = project
+        self.row = workplanrow
+        self.verbose = True
+        
+        # self._hrrr_inst = None
+        # self._projection = None
+        if autorun:
+            self.process()
+            
+    def process(self, keep_ds = False, save = True):
+        sat_inst = open_file(self.row.path2tempfile)
+        proj = sat_inst.project_on_sites(self.project.sites)
+        
+        ds = proj.projection2area
+        ds['datetime_end'] = self.row.datetime_end
+        ds = ds.expand_dims({'datetime':[self.row.datetime_start]})
+        if save:
+            ds.to_netcdf(self.row.path2intermediate_file_area)
+        if keep_ds:
+            self.ds_area = ds
+        
+        ds = proj.projection2point
+        ds['datetime_end'] = self.row.datetime_end
+        ds = ds.expand_dims({'datetime':[self.row.datetime_start]})
+        
+        if save:
+            ds.to_netcdf(self.row.path2intermediate_file_point)
+        if keep_ds:
+            self.ds_point = ds
+        return
+        
+        
 class SatelliteMovie(object):
     def __init__(self, 
                  path2fld_sat = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI-L2-MCMIP/',
@@ -356,6 +548,8 @@ class GeosSatteliteProducts(object):
         self.ds = ds
         
 #         self._varname4test = 'CMI_C02'
+
+        self.valid_qf = None
         self._lonlat = None
         
     @property
@@ -393,52 +587,11 @@ class GeosSatteliteProducts(object):
 #                                     lats = lats)
         return self._lonlat
     
-    # @_numba.jit(nopython=True)
-    def get_closest_gridpoint(self, lon_lat_sites):
-        """using numba only saved me 5% of the time"""
-    #     out = {}
-        if type(lon_lat_sites).__name__ == 'Station':
-            isstation = lon_lat_sites
-            lon_lat_sites = _np.array([[lon_lat_sites.lon, lon_lat_sites.lat]])
-        else:
-            isstation = False
-        lon_g, lat_g = self.lonlat
-        # armins columns: argmin_x, argmin_y, lon_g, lat_g, lon_s, lat_s, dist_min
-        out = _np.zeros((lon_lat_sites.shape[0], 7))
-        out_dict = {}
-        
-    #     if len(lon_g.shape) == 3:
-    #         lon_g = lon_g[0,:,:]
-    #         lat_g = lat_g[0,:,:]
-        index = []
-        for e,site in enumerate(lon_lat_sites):
-            if type(isstation).__name__ == 'Station':
-                idx = isstation.name
-            else:
-                idx = e
-            index.append(idx)
-            
-            # print(site)
-            lon_s, lat_s = site
-        #     lon_s = site.lon
-        #     lat_s = site.lat
+    def project_on_sites(self, sites):
+        site_projection = Grid2SiteProjection(self, sites) 
+        return site_projection
     
-            p = _np.pi / 180
-            a = 0.5 - _np.cos((lat_s-lat_g)*p)/2 + _np.cos(lat_g*p) * _np.cos(lat_s*p) * (1-_np.cos((lon_s-lon_g)*p))/2
-            dist = 12742 * _np.arcsin(_np.sqrt(a))
-    
-            # get closest
-            argmin = dist.argmin()//dist.shape[1], dist.argmin()%dist.shape[1]
-            out[e,:2] = argmin        
-            out[e,2] = lon_g[argmin]
-            out[e,3] = lat_g[argmin]
-            out[e,4] = lon_s
-            out[e,5] = lat_s
-            out[e,6] = dist[argmin]
-        closest_point = _pd.DataFrame(out, columns = ['argmin_x', 'argmin_y','lon_gritpoint', 'lat_gridpoint', 'lon_station', 'lat_station', 'distance_station_gridpoint'], index = index)
-        out_dict['closest_point'] = closest_point
-        out_dict['last_distance_grid'] = dist
-        return out_dict
+
     
     def get_resolution(self, site = [-105.2368, 40.12498]):
         """
@@ -493,6 +646,199 @@ class GeosSatteliteProducts(object):
             bmap.drawstates()
         bmap.pcolormesh(lons, lats, self.ds[variable], latlon=True, **pcolor_kwargs)
         return bmap
+
+@_numba.jit(nopython=True, 
+            fastmath=True, 
+            # parallel=True,
+            )
+def get_dists(lon_lat_grid, lon_lat_sites):
+    out = _np.zeros((lon_lat_sites.shape[0], 7), dtype = _np.float32)
+    dist_array = _np.zeros(lon_lat_grid[0].shape + (len(lon_lat_sites),), dtype = _np.float32)
+    lon_g, lat_g = lon_lat_grid
+    for e,site in enumerate(lon_lat_sites):
+        lon_s, lat_s = site
+
+        p = _np.pi / 180
+        a = 0.5 - _np.cos((lat_s-lat_g)*p)/2 + _np.cos(lat_g*p) * _np.cos(lat_s*p) * (1-_np.cos((lon_s-lon_g)*p))/2
+        dist = 12742 * _np.arcsin(_np.sqrt(a))
+
+        # get closest
+        argmin = dist.argmin()//dist.shape[1], dist.argmin()%dist.shape[1]
+        out[e,:2] = argmin        
+        out[e,2] = lon_g[argmin]
+        out[e,3] = lat_g[argmin]
+        out[e,4] = lon_s
+        out[e,5] = lat_s
+        out[e,6] = dist[argmin]
+        dist_array[:,:,e] = dist
+    return out, dist_array
+
+class Grid2SiteProjection(object):
+    def __init__(self, grid, sites):
+        self.grid = grid
+        self.sites = sites
+        self.radii = [5,10,25,50,100]
+        
+        self._closest_points = None
+        self._distance_grids =  None
+        self._projection2poin = None
+        self._projection2area = None
+    
+    @property
+    def projection2point(self):
+        if isinstance(self._projection2poin, type(None)):
+            # select relevant variablese ... those with x and y
+            var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            ds = self.grid.ds[var_sel]
+            
+            # cleanup the the coordinates
+            coords2del = list(ds.coords)
+            coords2del.remove('x')
+            coords2del.remove('y')
+            # coords2del.remove('t')
+            
+            ds = ds.drop_vars(coords2del)
+            
+            for e,(idx, rowsmt) in enumerate(self.closest_grid_points.iterrows()):
+                ds_at_site = ds.isel(x= int(rowsmt.argmin_y), y=int(rowsmt.argmin_x)) #x and y seam to be interchanged
+            
+                # drop variables and coordinates that are not needed
+            #     dropthis = [var.__str__() for var in ds_at_site if var.__str__() not in ['AOD', 'DQF', 'AE1', 'AE2', 'AE_DQF']] + [cor for cor in ds_at_site.coords]
+            #     ds_at_site = ds_at_site.drop(dropthis)
+            
+                # add armin_x, argmin_y, etc to the dataset
+                for k in rowsmt.index:
+                    ds_at_site[k] = rowsmt[k]
+            
+                # add site dimension
+                ds_at_site = ds_at_site.expand_dims({'site': [rowsmt.name]})
+            
+                if e == 0:
+                    ds_at_sites = ds_at_site
+                else:
+                    ds_at_sites = _xr.concat([ds_at_sites, ds_at_site], 'site')
+            
+            ### add dimentions for later concatination and save
+            # ds_at_sites['datetime_end'] = row.datetime_end
+            # ds_at_sites = ds_at_sites.expand_dims({'datetime':[row.datetime_start]})
+            
+            # clean up coordinates
+            ds_at_sites = ds_at_sites.drop_vars(['x','y'])
+            self._projection2poin = ds_at_sites
+        return self._projection2poin
+    
+    @property
+    def projection2area(self):
+        if isinstance(self._projection2area, type(None)):
+
+            # select relevant variablese ... those with x and y
+            var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            ds = self.grid.ds[var_sel]
+            
+            # cleanup the the coordinates
+            coords2del = list(ds.coords)
+            coords2del.remove('x')
+            coords2del.remove('y')
+            ds = ds.drop_vars(coords2del)
+            
+            
+            # select only those values where QF is valid
+            ds = ds.where(ds.DQF.isin(self.grid.valid_qf))
+
+            for e,radius in enumerate(self.radii):
+                where = self.distance_grids < radius
+            
+                ds_sel = ds.where(where)
+            
+                # median
+                dst = ds_sel.median(dim = ['x', 'y'])
+                dst = dst.expand_dims({'stats':['median']})
+            
+                ds_area = dst
+            
+                #mean
+                dst = ds_sel.mean(dim = ['x', 'y'])
+                dst = dst.expand_dims({'stats':['mean']})
+            
+                ds_area = _xr.concat([ds_area, dst], 'stats')
+            
+                # std ... "un"-biased
+                dst = ds_sel.std(dim = ['x', 'y'], 
+                           ddof=1,
+                          )
+                dst = dst.expand_dims({'stats':['std']})
+                ds_area = _xr.concat([ds_area, dst], 'stats')
+            
+                # no of valid points
+                ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
+                ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
+                
+                ds_area = ds_area.expand_dims({'radius': [radius]})
+                if e == 0:
+                    ds_area_all = ds_area
+                else:
+                    ds_area_all = _xr.concat([ds_area_all, ds_area], 'radius')
+            self._projection2area = ds_area_all
+            self.tp_ds_sel = ds_sel
+        return self._projection2area
+            
+    @property
+    def distance_grids(self):
+        if isinstance(self._distance_grids, type(None)):
+            self.closest_grid_points
+        return self._distance_grids
+    
+    @property
+    def closest_grid_points(self):#, discard_outsid_grid = 2.2):
+        if isinstance(self._closest_points, type(None)):
+
+            lon_lat_sites = self.sites
+            if type(lon_lat_sites).__name__ == 'Station':
+                idx = [lon_lat_sites.name]
+                lon_lat_sites = _np.array([[lon_lat_sites.lon, lon_lat_sites.lat]])
+            elif type(lon_lat_sites).__name__ == 'NetworkStations':
+                idx = [s.name for s in lon_lat_sites]
+                lon_lat_sites =_np.array([[s.lon, s.lat] for s in lon_lat_sites])
+            else:
+                idx = range(len(lon_lat_sites))
+            lon_g, lat_g = self.grid.lonlat
+            # armins columns: argmin_x, argmin_y, lon_g, lat_g, lon_s, lat_s, dist_min
+            out_dict = {}
+            
+        #     if len(lon_g.shape) == 3:
+        #         lon_g = lon_g[0,:,:]
+        #         lat_g = lat_g[0,:,:]
+            # index = idx #todo: rename below
+            # for e,site in enumerate(lon_lat_sites):
+    
+            #     lon_s, lat_s = site
+        
+            #     p = _np.pi / 180
+            #     a = 0.5 - _np.cos((lat_s-lat_g)*p)/2 + _np.cos(lat_g*p) * _np.cos(lat_s*p) * (1-_np.cos((lon_s-lon_g)*p))/2
+            #     dist = 12742 * _np.arcsin(_np.sqrt(a))
+        
+            #     # get closest
+            #     argmin = dist.argmin()//dist.shape[1], dist.argmin()%dist.shape[1]
+            #     out[e,:2] = argmin        
+            #     out[e,2] = lon_g[argmin]
+            #     out[e,3] = lat_g[argmin]
+            #     out[e,4] = lon_s
+            #     out[e,5] = lat_s
+            #     out[e,6] = dist[argmin]
+            out, dist_array = get_dists(self.grid.lonlat, lon_lat_sites)
+            # return out
+            dist_array = _xr.DataArray(data = dist_array,
+                                     dims = ['y','x','site'],
+                                     coords = {'site': idx,
+                                               'x': self.grid.ds.x,
+                                               'y': self.grid.ds.y}
+                                    )
+            self._distance_grids = dist_array
+            self._closest_points = _pd.DataFrame(out, columns = ['argmin_x', 'argmin_y','lon_gritpoint', 'lat_gridpoint', 'lon_station', 'lat_station', 'distance_station_gridpoint'], index = idx)
+            # closest_point = closest_point[closest_point.distance_station_gridpoint < discard_outsid_grid]
+            # out_dict['closest_point'] = closest_point
+            # out_dict['last_distance_grid'] = dist.astype(_np.float32)
+        return self._closest_points
 
 class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
     def __init__(self, *args):
@@ -590,6 +936,12 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
 class ABI_L2_AODC_M6(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
+        self.valid_qf = [0,1]
+        
+class ABI_L2_LSTC_M6(GeosSatteliteProducts):
+    def __init__(self, *args):
+        super().__init__(*args)
+        self.valid_qf = [0,]
         
         
         
