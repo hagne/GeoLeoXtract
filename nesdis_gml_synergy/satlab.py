@@ -217,7 +217,97 @@ class WorkplanEntry(object):
             self.ds_point = ds
         return
         
+
+class Concatonator(object):
+    def __init__(self, path2scraped_files = '/mnt/telg/tmp/class_tmp_inter/point',
+                       path2concat_files = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/point',
+                       skip_last_day = False,
+                       test = False):
+        self.path2scraped_files = _pl.Path(path2scraped_files)
+        self.path2concat_files = _pl.Path(path2concat_files)
+        self.skip_last_day = skip_last_day
+        try:
+            self.path2concat_files.mkdir(exist_ok=True)
+        except:
+            self.path2concat_files.mkdir(exist_ok=True)
         
+        self.test = test
+        
+        self._workplan = None
+        self._concatenated = None
+        
+    @property
+    def workplan(self):
+        if isinstance(self._workplan, type(None)):
+            ## make a workplan
+            workplan = _pd.DataFrame(self.path2scraped_files.glob('*.nc'), columns=['path2scraped_files'])
+            
+            # get datetime
+            # df['datetime_start'] =df.apply(lambda row: _pd.to_datetime(row.path2intermediate_file_point.name.split('_')[3][1:-1], format = '%Y%j%H%M%S'), axis = 1)
+            workplan['datetime'] =workplan.apply(lambda row: _pd.to_datetime(row.path2scraped_files.name.split('_')[4][1:-1], format = '%Y%j%H%M%S'), axis = 1)
+           
+            # if 0:
+                # get the date
+            workplan['date'] = workplan.apply(lambda row: row.datetime.date(), axis=1)
+
+
+            #remove last day ... only work on the days before last to get daily files
+            if self.skip_last_day:
+                workplan.sort_values('date', inplace=True)
+                last_day = workplan.date.unique()[-1]
+                workplan = workplan[workplan.date != last_day].copy()
+
+            # get product name
+            workplan['product_name'] = workplan.apply(lambda row: row.path2scraped_files.name.split('_')[1], axis = 1)
+
+            # output paths
+            workplan['path2concat_files'] = workplan.apply(lambda row: self.path2concat_files.joinpath(f'goes_at_gml_{row.product_name}_{row.date.year:04d}{row.date.month:02d}{row.date.day:02d}.nc'), axis = 1)
+
+            # remove if output path exists
+            workplan['p2rf_exists'] = workplan.apply(lambda row: row.path2concat_files.is_file(), axis = 1)
+            workplan = workplan[ ~ workplan.p2rf_exists].copy()
+            
+            workplan.sort_values(['datetime'], inplace=True)
+                
+            self._workplan = workplan
+            
+        return self._workplan
+    
+    @property
+    def concatenated(self):
+        if isinstance(self._concatenated, type(None)):
+            concat = []
+            for date,date_group in self.workplan.groupby('date'):
+#                 print(date)
+                # fc_list = []
+#                 for frcst_cycle, fc_group in date_group.groupby('frcst_cycle'):
+# #                     print(frcst_cycle)
+#                     fc_list.append(xr.open_mfdataset(fc_group.path2scraped_files, concat_dim='forecast_hour'))
+            
+                try:
+                    # ds = xr.concat(fc_list, dim = 'datetime')
+                    ds = _xr.open_mfdataset(date_group.path2scraped_files, concat_dim='datetime')
+                except ValueError as err:
+                    errmsg = err.args[0]
+                    err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
+                    raise
+
+                fn_out = date_group.path2concat_files.unique()
+                assert(len(fn_out) == 1)
+                concat.append({'dataset': ds, 'fname': fn_out[0]})
+                if self.test:
+                    break
+            self._concatenated = concat
+        return self._concatenated
+#                 ds.to_netcdf(fn_out[0])
+        
+    def save(self):
+        for daydict in self.concatenated:
+            daydict['dataset'].to_netcdf(daydict['fname'])  
+            if self.test:
+                break
+            
+
 class SatelliteMovie(object):
     def __init__(self, 
                  path2fld_sat = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI-L2-MCMIP/',
