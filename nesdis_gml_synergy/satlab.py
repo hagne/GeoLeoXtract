@@ -7,8 +7,8 @@ import numpy as _np
 # from datetime import datetime, timedelta
 from mpl_toolkits.basemap import Basemap as _Basemap
 from pyproj import Proj as _Proj
-import urllib as _urllib
-from pyquery import PyQuery as _pq
+# import urllib as _urllib
+# from pyquery import PyQuery as _pq
 import pandas as _pd
 import matplotlib.pyplot as _plt
 import mpl_toolkits.basemap as _basemap
@@ -18,24 +18,53 @@ import multiprocessing as _mp
 import functools as _functools
 
 
-def open_file(p2f, verbose = False):
-    ds = _xr.open_dataset(p2f)
+def open_file(p2f, extent = None ,verbose = False):
+    """
+    Open a satellite data file. Probably only works for GOES
+
+    Parameters
+    ----------
+    p2f : string or xarray.Dataset
+        Path to file or a xarray.Dataset.
+    extend : list, optional
+        Select a particular area by longitude (lon) and latitude (lat): [min(lon), max(lon), min(lat), max(lat)]. The default is None.
+    verbose : TYPE, optional
+        DESCRIPTION. The default is False.
+
+    Returns
+    -------
+    classinst : TYPE
+        DESCRIPTION.
+
+    """
+    if isinstance(p2f, _xr.Dataset):
+        ds = p2f
+    else:
+        ds = _xr.open_dataset(p2f)
+        
     product_name = ds.attrs['dataset_name'].split('_')[1]
     if verbose:
         print(f'product name: {product_name}')
-    if product_name == 'ABI-L2-AODC-M6':
-        classinst = ABI_L2_AODC_M6(ds)
+    # if product_name == 'ABI-L2-AODC-M6':
+    #     classinst = ABI_L2_AODC_M6(ds)
+    if 'ABI-L2-AODC' in product_name:
+        classinst = ABI_L2_AODC(ds)
     elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
         classinst = ABI_L2_MCMIPC_M6(ds)
     elif product_name == 'ABI-L2-LSTC-M6':
         classinst = ABI_L2_LSTC_M6(ds)
         if verbose:
-            print(f'identified as: ABI-L2-LSTC-M6')
+            print('identified as: ABI-L2-LSTC-M6')
     else:
         classinst = GeosSatteliteProducts(ds)
         if verbose:
             print('not identified')
         # assert(False), f'The product {product_name} is not known yet, programming required.'
+    
+    if not isinstance(extent, type(None)):
+        classinst  = classinst.select_area(extent)
+        
+    
     return classinst
 
 
@@ -68,8 +97,8 @@ class ProjectionProject(object):
             assert(fld.is_dir()), f'no such folder {fld.as_posix()}, set generate_missing_folders to true to generate folders'
         
         self._workplan = None
-        
-        
+            
+    
     @property
     def workplan(self):
         # list_of_files = None,
@@ -641,7 +670,28 @@ class GeosSatteliteProducts(object):
 
         self.valid_qf = None
         self._lonlat = None
+    
+    
+    def select_area(self, extent):
+        lon_min, lon_max, lat_min, lat_max = extent
+        lon, lat = self.lonlat
+
+        # where_lon = _np.logical_and(lon > lon_min, lon < lon_max)
+        # where_lat = _np.logical_and(lat > lat_min, lat < lat_max)
+        where = _np.logical_and(_np.logical_and(lon > lon_min, lon < lon_max), _np.logical_and(lat > lat_min, lat < lat_max))
         
+        # self.ds['lon'] = _xr.DataArray(lon, dims = ['y', 'x'])
+        # self.ds['lat'] = _xr.DataArray(lat, dims = ['y', 'x'])
+        
+        self.ds['where_cond'] = _xr.DataArray(where, dims = ['y', 'x'])
+        
+        ds_sel = self.ds.where(self.ds.where_cond)
+        # the above 
+        ds_sel = ds_sel.dropna('x', how = 'all')
+        ds_sel = ds_sel.dropna('y', how = 'all')
+        ds_sel = ds_sel.drop(['lat', 'lon'])
+        return open_file(ds_sel)
+    
     @property
     def lonlat(self):
         if isinstance(self._lonlat, type(None)):
@@ -675,6 +725,8 @@ class GeosSatteliteProducts(object):
 
             self._lonlat = (lons, lats) #dict(lons = lons, 
 #                                     lats = lats)
+            self.ds['lon'] = _xr.DataArray(lons, dims = ['y', 'x']).astype(_np.float32)
+            self.ds['lat'] = _xr.DataArray(lats, dims = ['y', 'x']).astype(_np.float32)
         return self._lonlat
     
     def project_on_sites(self, sites):
@@ -779,6 +831,7 @@ class Grid2SiteProjection(object):
         if isinstance(self._projection2poin, type(None)):
             # select relevant variablese ... those with x and y
             var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            
             ds = self.grid.ds[var_sel]
             
             # cleanup the the coordinates
@@ -823,6 +876,10 @@ class Grid2SiteProjection(object):
 
             # select relevant variablese ... those with x and y
             var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            
+            var_sel.pop(var_sel.index('lon'))
+            var_sel.pop(var_sel.index('lat'))
+            
             ds = self.grid.ds[var_sel]
             
             # cleanup the the coordinates
@@ -831,10 +888,12 @@ class Grid2SiteProjection(object):
             coords2del.remove('y')
             ds = ds.drop_vars(coords2del)
             
-            
-            # select only those values where QF is valid
-            ds = ds.where(ds.DQF.isin(self.grid.valid_qf))
-
+            # self.tp_ds_1 = ds.copy()
+            # select only those values where QF is valid, only works if valid_qf was set.
+            # assert(not isinstance(self.grid.valid_qf, type(None))), 'valid_qf can not be None, the file could probably not be assigned to a particular satellite product!!'
+            if not isinstance(self.grid.valid_qf, type(None)):
+                ds = ds.where(ds.DQF.isin(self.grid.valid_qf))
+            # self.tp_ds_2 = ds.copy()
             for e,radius in enumerate(self.radii):
                 where = self.distance_grids < radius
             
@@ -884,10 +943,10 @@ class Grid2SiteProjection(object):
 
             lon_lat_sites = self.sites
             if type(lon_lat_sites).__name__ == 'Station':
-                idx = [lon_lat_sites.name]
+                idx = [lon_lat_sites.abb]
                 lon_lat_sites = _np.array([[lon_lat_sites.lon, lon_lat_sites.lat]])
             elif type(lon_lat_sites).__name__ == 'NetworkStations':
-                idx = [s.name for s in lon_lat_sites]
+                idx = [s.abb for s in lon_lat_sites]
                 lon_lat_sites =_np.array([[s.lon, s.lat] for s in lon_lat_sites])
             else:
                 idx = range(len(lon_lat_sites))
@@ -1023,7 +1082,7 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
             out['bmap'] = bmap
         return out
 
-class ABI_L2_AODC_M6(GeosSatteliteProducts):
+class ABI_L2_AODC(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
         self.valid_qf = [0,1]
