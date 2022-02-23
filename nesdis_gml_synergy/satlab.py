@@ -51,10 +51,14 @@ def open_file(p2f, extent = None ,verbose = False):
         classinst = ABI_L2_AODC(ds)
     elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
         classinst = ABI_L2_MCMIPC_M6(ds)
-    elif product_name == 'ABI-L2-LSTC-M6':
-        classinst = ABI_L2_LSTC_M6(ds)
+    elif product_name[:-4] == 'ABI-L2-LST':
+        classinst = ABI_L2_LST(ds)
         if verbose:
             print('identified as: ABI-L2-LSTC-M6')
+    elif product_name[:-4] == 'ABI-L2-COD':
+        classinst = ABI_L2_COD(ds)
+        if verbose:
+            print('identified as: ABI_L2_COD.')
     else:
         classinst = GeosSatteliteProducts(ds)
         if verbose:
@@ -774,7 +778,31 @@ class GeosSatteliteProducts(object):
         out = _pd.DataFrame({'lon':resx, 'lat': resy})
         return out
     
-    def plot(self, variable, bmap = None, **pcolor_kwargs):
+    def plot(self, variable, valid_qf = True, bmap = None, **pcolor_kwargs):
+        """
+        Plot on map
+
+        Parameters
+        ----------
+        variable : str
+            which variable to plot.
+        valid_qf : bool, optional
+            If only to plot good quality data (defined by the product subclass). The default is True.
+        bmap : TYPE, optional
+            DESCRIPTION. The default is None.
+        **pcolor_kwargs : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        bmap : TYPE
+            DESCRIPTION.
+        pc : TYPE
+            DESCRIPTION.
+        cb : TYPE
+            DESCRIPTION.
+
+        """
         lons,lats = self.lonlat
         
         if isinstance(bmap, type(None)):
@@ -786,8 +814,18 @@ class GeosSatteliteProducts(object):
             bmap.drawcoastlines()
             bmap.drawcountries()
             bmap.drawstates()
-        bmap.pcolormesh(lons, lats, self.ds[variable], latlon=True, **pcolor_kwargs)
-        return bmap
+            
+        ### select valid quality flags given by particular product ... if defined
+        ds = self.ds
+        if valid_qf:
+            if not isinstance(self.valid_qf, type(None)): 
+                ds = ds.where(ds.DQF.isin(self.valid_qf))
+            
+        pc = bmap.pcolormesh(lons, lats, ds[variable], latlon=True, **pcolor_kwargs)
+        f = _plt.gcf()
+        cb = f.colorbar(pc)
+        cb.set_label(ds[variable].long_name)
+        return bmap,pc,cb
 
 @_numba.jit(nopython=True, 
             fastmath=True, 
@@ -927,8 +965,16 @@ class Grid2SiteProjection(object):
                     ds_area_all = ds_area
                 else:
                     ds_area_all = _xr.concat([ds_area_all, ds_area], 'radius')
+            
+            #### populate attributes
+            for var in var_sel:
+                ds_area_all[var].attrs = ds[var].attrs
+            ds_area_all.radius.attrs['long_name'] = 'Radius of area around point over which data statistics are calsulated' 
+            ds_area_all.stats.attrs['long_name'] = 'Statistics of values in circlular area around site'
+            ds_area_all.num_of_valid_points.attrs['long_name'] = 'Number of valid data points used to calculating statistic.'
+            
             self._projection2area = ds_area_all
-            self.tp_ds_sel = ds_sel
+            # self.tp_ds_sel = ds_sel
         return self._projection2area
             
     @property
@@ -1087,10 +1133,27 @@ class ABI_L2_AODC(GeosSatteliteProducts):
         super().__init__(*args)
         self.valid_qf = [0,1]
         
-class ABI_L2_LSTC_M6(GeosSatteliteProducts):
+class ABI_L2_LST(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
         self.valid_qf = [0,]
         
+class ABI_L2_ACHA(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Cloud Top Height'''
+        super().__init__(*args)
+        # self.valid_qf = [0,]    
         
+class ABI_L2_COD(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Cloud Optical Depth'''
+        super().__init__(*args)
+        self.valid_qf = [0,]    
         
+abi_products = [{'product_name': 'ABI-L2-ACHA',
+                'long_name': 'Cloud Top Height', 
+                'satlab_class': ABI_L2_ACHA},
+                # {'product_name': 'ABI-L2-ACHT',
+                # 'long_name': 'Cloud Top Temperature', 
+                # 'satlab_class': ABI_L2_ACHT},
+               ]

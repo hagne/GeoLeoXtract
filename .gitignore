@@ -127,3 +127,5 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+examples/getting_started-Copy1.ipynb
+examples/getting_started-Copy2.ipynb
