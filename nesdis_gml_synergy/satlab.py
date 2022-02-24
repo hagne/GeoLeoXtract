@@ -18,7 +18,7 @@ import multiprocessing as _mp
 import functools as _functools
 
 
-def open_file(p2f, extent = None ,verbose = False):
+def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False):
     """
     Open a satellite data file. Probably only works for GOES
 
@@ -26,8 +26,12 @@ def open_file(p2f, extent = None ,verbose = False):
     ----------
     p2f : string or xarray.Dataset
         Path to file or a xarray.Dataset.
+    bypass_time_unit_error: bool, optional.
+        In the past some files have an error in the time variable. This allows 
+        you to open it anyway. Also, there are other ways to get the time!
     extend : list, optional
-        Select a particular area by longitude (lon) and latitude (lat): [min(lon), max(lon), min(lat), max(lat)]. The default is None.
+        Select a particular area by longitude (lon) and latitude (lat): 
+            [min(lon), max(lon), min(lat), max(lat)]. The default is None.
     verbose : TYPE, optional
         DESCRIPTION. The default is False.
 
@@ -40,7 +44,16 @@ def open_file(p2f, extent = None ,verbose = False):
     if isinstance(p2f, _xr.Dataset):
         ds = p2f
     else:
-        ds = _xr.open_dataset(p2f)
+        try:
+            ds = _xr.open_dataset(p2f)
+        except ValueError as err:
+            if not bypass_time_unit_error:
+                raise
+            else:
+                if 'unable to decode time units' in err.args[0]:
+                    ds = _xr.open_dataset(p2f,decode_times=False,)
+                else:
+                    raise
         
     product_name = ds.attrs['dataset_name'].split('_')[1]
     if verbose:
