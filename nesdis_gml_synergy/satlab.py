@@ -72,6 +72,10 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
         classinst = ABI_L2_COD(ds)
         if verbose:
             print('identified as: ABI_L2_COD.')
+    elif product_name[:-4] == 'ABI-L2-ACM':
+        classinst = ABI_L2_ACM(ds)
+        if verbose:
+            print('identified as: ABI_L2_ACM.')
     else:
         classinst = GeosSatteliteProducts(ds)
         if verbose:
@@ -685,7 +689,7 @@ class GeosSatteliteProducts(object):
         
 #         self._varname4test = 'CMI_C02'
 
-        self.valid_qf = None
+        # self.valid_qf = None
         self._lonlat = None
     
     
@@ -921,8 +925,126 @@ class Grid2SiteProjection(object):
             self._projection2poin = ds_at_sites
         return self._projection2poin
     
+    def _project2area(self, data_quality):
+        """
+        project data to an area around the grid point
+
+        Parameters
+        ----------
+        data_quality : TYPE
+            Which satellite data quality to consider. 
+            Options: good, intermediate
+            Note: This will work only for products that have a class defined
+            and the class has the associated attributes defined (qf_good, 
+            qf_intermediate)
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+        
+        if hasattr(self.grid, "valid_qf"):
+            valid_qf = self.grid.valid_qf
+            data_quality = 'custom'
+        else:
+            assert(hasattr(self.grid, 'qf_good')), 'Make sure the satellite product instance has the attributes qf_good and qf_intermediate defined.'
+            if data_quality == 'good':
+                valid_qf = self.grid.qf_good
+            elif data_quality == 'intermediate':
+                valid_qf = self.grid.qf_intermediate + self.grid.qf_good
+            else:
+                assert(False), f'data_quality "{data_quality}" not in [good, intermediate].'
+        
+        
+        
+        # select relevant variablese ... those with x and y
+        var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+        
+        self.tp_var_sel = var_sel
+        # lat and lon might be present if lonlat was executed prior to this ... remove it
+        if 'lon' in var_sel:
+            var_sel.pop(var_sel.index('lon'))
+            var_sel.pop(var_sel.index('lat'))
+        
+        ds = self.grid.ds[var_sel]
+        
+        # cleanup the the coordinates
+        coords2del = list(ds.coords)
+        coords2del.remove('x')
+        coords2del.remove('y')
+        ds = ds.drop_vars(coords2del)
+        
+        # self.tp_ds_1 = ds.copy()
+        # select only those values where QF is valid, only works if valid_qf was set.
+        # assert(not isinstance(self.grid.valid_qf, type(None))), 'valid_qf can not be None, the file could probably not be assigned to a particular satellite product!!'
+        # if not isinstance(self.grid.valid_qf, type(None)):
+        ds = ds.where(ds.DQF.isin(valid_qf))
+        # self.tp_ds_2 = ds.copy()
+        for e,radius in enumerate(self.radii):
+            where = self.distance_grids < radius
+        
+            ds_sel = ds.where(where)
+        
+            # median
+            dst = ds_sel.median(dim = ['x', 'y'])
+            dst = dst.expand_dims({'stats':['median']})
+        
+            ds_area = dst
+        
+            #mean
+            dst = ds_sel.mean(dim = ['x', 'y'])
+            dst = dst.expand_dims({'stats':['mean']})
+        
+            ds_area = _xr.concat([ds_area, dst], 'stats')
+        
+            # std ... "un"-biased
+            dst = ds_sel.std(dim = ['x', 'y'], 
+                       ddof=1,
+                      )
+            dst = dst.expand_dims({'stats':['std']})
+            ds_area = _xr.concat([ds_area, dst], 'stats')
+        
+            # no of valid points
+            ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
+            ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
+            
+            ds_area = ds_area.expand_dims({'radius': [radius]})
+            if e == 0:
+                ds_area_all = ds_area
+            else:
+                ds_area_all = _xr.concat([ds_area_all, ds_area], 'radius')
+        
+        #### populate attributes
+        for var in var_sel:
+            ds_area_all[var].attrs = ds[var].attrs
+            # ds_area_all[var].attrs['data_quality_assessment'] = data_quality
+            # ds_area_all[var].attrs['data_quality_valid_qfs'] = valid_qf
+            
+        ds_area_all.radius.attrs['long_name'] = 'Radius of area around point over which data statistics are calsulated' 
+        ds_area_all.stats.attrs['long_name'] = 'Statistics of values in circlular area around site'
+        ds_area_all.num_of_valid_points.attrs['long_name'] = 'Number of valid data points used to calculating statistic.'
+        
+        if data_quality != 'custom':
+            ds_area_all = ds_area_all.expand_dims({'data_quality':[data_quality,]})
+            ds_area_all.data_quality.attrs[f'valid_qf_{data_quality}'] = valid_qf
+        return ds_area_all
+       
     @property
     def projection2area(self):
+        if isinstance(self._projection2area, type(None)):
+            if hasattr(self.grid, "valid_qf"):
+                self._projection2area = self.projection2area('custom')
+            else:
+                outg = self._project2area('good')
+                outi = self._project2area('intermediate')    
+                out = _xr.concat([outg, outi], dim = 'data_quality', combine_attrs='drop_conflicts')
+                self._projection2area = out
+        return self._projection2area
+    
+    @property
+    def deprecated_projection2area(self):
         if isinstance(self._projection2area, type(None)):
 
             # select relevant variablese ... those with x and y
@@ -1162,6 +1284,15 @@ class ABI_L2_COD(GeosSatteliteProducts):
         '''Cloud Optical Depth'''
         super().__init__(*args)
         self.valid_qf = [0,]    
+
+class ABI_L2_ACM(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Clear Sky Mask'''
+        super().__init__(*args)
+        self.qf_good = [0,]
+        self.qf_intermediate = [2,4,5,6]
+        self.qf_bad = [1,3]
+        
         
 abi_products = [{'product_name': 'ABI-L2-ACHA',
                 'long_name': 'Cloud Top Height', 
