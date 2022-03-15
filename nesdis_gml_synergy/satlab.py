@@ -16,6 +16,7 @@ import os as _os
 import numba as _numba
 import multiprocessing as _mp
 import functools as _functools
+from numba import vectorize, int8, float32
 
 
 def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False):
@@ -76,6 +77,22 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
         classinst = ABI_L2_ACM(ds)
         if verbose:
             print('identified as: ABI_L2_ACM.')
+    elif product_name[:-4] == 'ABI-L2-ADP':
+        classinst = ABI_L2_ADP(ds)
+        if verbose:
+            print('identified as: ABI_L2_ADP.')
+    elif product_name[:-4] == 'ABI-L2-ACHA':
+        classinst = ABI_L2_ACHA(ds)
+        if verbose:
+            print('identified as: ABI_L2_ACHA.')
+    elif product_name[:-4] == 'ABI-L2-CTP':
+        classinst = ABI_L2_CTP(ds)
+        if verbose:
+            print('identified as: ABI_L2_CTP.')
+    elif product_name[:-4] == 'ABI-L2-DSR':
+        classinst = ABI_L2_DSR(ds)
+        if verbose:
+            print('identified as: ABI_L2_DSR.')
     else:
         classinst = GeosSatteliteProducts(ds)
         if verbose:
@@ -685,14 +702,95 @@ class GeosSatteliteProducts(object):
         else:
             ds = _xr.open_dataset(file)
         
+        
         self.ds = ds
         
+        self.qf_managment = None
 #         self._varname4test = 'CMI_C02'
 
         # self.valid_qf = None
         self._lonlat = None
+        
+        # some file are provide in scan_angle others in lat lon
+        if 'x' in ds.coords:
+            self.grid_type = 'scan_angle'
+        elif 'lat' in ds.coords:
+            self.grid_type = 'lonlat'
+
+    @property
+    def valid_2D_variables(self):      
+        if self.grid_type == 'scan_angle':
+            var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('y', 'x')]
+            var_sel = [var for var in var_sel if not 'DQF' in var]
+            # lat and lon might be present if lonlat was executed prior to this ... remove it
+            if 'lon' in var_sel:
+                var_sel.pop(var_sel.index('lon'))
+                var_sel.pop(var_sel.index('lat'))
+            
+        elif self.grid_type == 'lonlat':
+            var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('lat', 'lon')]
+            var_sel = [var for var in var_sel if not 'DQF' in var]
+        else:
+            assert(False)
+        return var_sel #list(ds.variables)
+
+    @property
+    def data_by_quality_high(self):
+        return self.get_data_by_quality(['high',])
     
+    @property
+    def data_by_quality_high_medium(self):
+        return self.get_data_by_quality(['high','medium'])
     
+    @property
+    def data_by_quality_high_medium_low(self):
+        return self.get_data_by_quality(['high','medium', 'low'])
+    
+    @property
+    def data_by_quality_medium(self):
+        return self.get_data_by_quality(['medium',])
+    
+    @property
+    def data_by_quality_low(self):
+        return self.get_data_by_quality(['low',])
+    
+    def get_data_by_quality(self, quality):
+        assert(isinstance(quality, list)), 'quality has to be a list of qualities'
+        # select relevant variablese ... those with x and y
+        # var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('y', 'x')]
+        
+        # # we don't want DQF i think
+        # var_sel.pop(var_sel.index('DQF'))
+        # # lat and lon might be present if lonlat was executed prior to this ... remove it
+        # if 'lon' in var_sel:
+        #     var_sel.pop(var_sel.index('lon'))
+        #     var_sel.pop(var_sel.index('lat'))
+        var_sel = self.valid_2D_variables
+        
+        ds = _xr.Dataset()
+        for var in var_sel:
+            if self.qf_managment.qf_by_variable[var] == 'ignore':
+                continue
+            valid_qf = []
+            for qual in quality:
+                valid_qf += self.qf_managment.qf_by_variable[var][qual]
+            ds[var] = self.ds[var].where(self.ds.DQF.isin(valid_qf))
+        
+        #### cleanup the  coordinates
+        coords2del = list(ds.coords)
+        if self.grid_type == 'scan_angle':
+            coords2del.remove('x')
+            coords2del.remove('y')
+        elif self.grid_type == 'lonlat':
+            coords2del.remove('lat')
+            coords2del.remove('lon')
+        else:
+            assert(False), 'New product attempt?!?'
+            
+        coords2del.remove('t')
+        ds = ds.drop_vars(coords2del)
+        return ds
+        
     def select_area(self, extent):
         lon_min, lon_max, lat_min, lat_max = extent
         lon, lat = self.lonlat
@@ -716,38 +814,48 @@ class GeosSatteliteProducts(object):
     @property
     def lonlat(self):
         if isinstance(self._lonlat, type(None)):
-            # Satellite height
-            sat_h = self.ds['goes_imager_projection'].perspective_point_height
-
-            # Satellite longitude
-            sat_lon = self.ds['goes_imager_projection'].longitude_of_projection_origin
-
-            # Satellite sweep
-            sat_sweep = self.ds['goes_imager_projection'].sweep_angle_axis
-
-            # The projection x and y coordinates equals the scanning angle (in radians) multiplied by the satellite height
-            # See details here: https://proj4.org/operations/projections/geos.html?highlight=geostationary
-            x = self.ds['x'][:] * sat_h
-            y = self.ds['y'][:] * sat_h
-
-            # Create a pyproj geostationary map object to be able to convert to what ever projecton is required
-            p = _Proj(proj='geos', h=sat_h, lon_0=sat_lon, sweep=sat_sweep)
-
-            # Perform cartographic transformation. That is, convert image projection coordinates (x and y)
-            # to latitude and longitude values.
-            XX, YY = _np.meshgrid(x, y)
-            lons, lats = p(XX, YY, inverse=True)
-            
-            # Assign the pixels showing space as a single point in the Gulf of Alaska
-#             where = _np.isnan(self.ds[self._varname4test].values)
-            where = _np.isinf(lons)
-            lats[where] = 57
-            lons[where] = -152
-
-            self._lonlat = (lons, lats) #dict(lons = lons, 
-#                                     lats = lats)
-            self.ds['lon'] = _xr.DataArray(lons, dims = ['y', 'x']).astype(_np.float32)
-            self.ds['lat'] = _xr.DataArray(lats, dims = ['y', 'x']).astype(_np.float32)
+            # There are a few products with lat lon in it!!! First without:
+            if self.grid_type == 'scan_angle':
+                assert('lat' not in self.ds.variables), 'This should not exist, this would mean there are both x,y and lat, lon'
+                # Satellite height
+                sat_h = self.ds['goes_imager_projection'].perspective_point_height
+    
+                # Satellite longitude
+                sat_lon = self.ds['goes_imager_projection'].longitude_of_projection_origin
+    
+                # Satellite sweep
+                sat_sweep = self.ds['goes_imager_projection'].sweep_angle_axis
+    
+                # The projection x and y coordinates equals the scanning angle (in radians) multiplied by the satellite height
+                # See details here: https://proj4.org/operations/projections/geos.html?highlight=geostationary
+                x = self.ds['x'][:] * sat_h
+                y = self.ds['y'][:] * sat_h
+    
+                # Create a pyproj geostationary map object to be able to convert to what ever projecton is required
+                p = _Proj(proj='geos', h=sat_h, lon_0=sat_lon, sweep=sat_sweep)
+    
+                # Perform cartographic transformation. That is, convert image projection coordinates (x and y)
+                # to latitude and longitude values.
+                XX, YY = _np.meshgrid(x, y)
+                lons, lats = p(XX, YY, inverse=True)
+                
+                # Assign the pixels showing space as a single point in the Gulf of Alaska
+    #             where = _np.isnan(self.ds[self._varname4test].values)
+                where = _np.isinf(lons)
+                lats[where] = 57
+                lons[where] = -152
+    
+                self._lonlat = (lons, lats) #dict(lons = lons, 
+    #                                     lats = lats)
+                self.ds['lon'] = _xr.DataArray(lons, dims = ['y', 'x']).astype(_np.float32)
+                self.ds['lat'] = _xr.DataArray(lats, dims = ['y', 'x']).astype(_np.float32)
+                
+            # The lat lon ... at least in the case I had (DSR), only gave one dimentional lat lon -> meshgrid    
+            elif self.grid_type == 'lonlat':
+                self._lonlat = _np.meshgrid(self.ds.lon.values, self.ds.lat.values)
+                # assert(False), 'noet'
+            else:
+                assert(False), 'noet'
         return self._lonlat
     
     def project_on_sites(self, sites):
@@ -844,10 +952,11 @@ class GeosSatteliteProducts(object):
         cb.set_label(ds[variable].long_name)
         return bmap,pc,cb
 
-@_numba.jit(nopython=True, 
-            fastmath=True, 
-            # parallel=True,
-            )
+# I don't see much improvement with numba!
+# @_numba.jit(nopython=True, 
+#             fastmath=True, 
+#             # parallel=True,
+#             )
 def get_dists(lon_lat_grid, lon_lat_sites):
     out = _np.zeros((lon_lat_sites.shape[0], 7), dtype = _np.float32)
     dist_array = _np.zeros(lon_lat_grid[0].shape + (len(lon_lat_sites),), dtype = _np.float32)
@@ -884,22 +993,28 @@ class Grid2SiteProjection(object):
     @property
     def projection2point(self):
         if isinstance(self._projection2poin, type(None)):
+            if self.grid.grid_type == 'scan_angle':
+                coord1, coord2 = 'x', 'y'
+            elif self.grid.grid_type == 'lonlat':
+                coord1, coord2 = 'lon', 'lat'
             # select relevant variablese ... those with x and y
-            var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            # var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            var_sel = self.grid.valid_2D_variables + ['DQF',]
             
             ds = self.grid.ds[var_sel]
             
             # cleanup the the coordinates
             coords2del = list(ds.coords)
-            coords2del.remove('x')
-            coords2del.remove('y')
+            coords2del.remove(coord1)
+            coords2del.remove(coord2)
             # coords2del.remove('t')
             
             ds = ds.drop_vars(coords2del)
             
             for e,(idx, rowsmt) in enumerate(self.closest_grid_points.iterrows()):
-                ds_at_site = ds.isel(x= int(rowsmt.argmin_y), y=int(rowsmt.argmin_x)) #x and y seam to be interchanged
-            
+                # ds_at_site = ds.isel(x= int(rowsmt.argmin_y), y=int(rowsmt.argmin_x)) #x and y seam to be interchanged
+                isel_dict = {coord1: int(rowsmt.argmin_y), coord2: int(rowsmt.argmin_x)}
+                ds_at_site = ds[isel_dict] #x and y seam to be interchanged
                 # drop variables and coordinates that are not needed
             #     dropthis = [var.__str__() for var in ds_at_site if var.__str__() not in ['AOD', 'DQF', 'AE1', 'AE2', 'AE_DQF']] + [cor for cor in ds_at_site.coords]
             #     ds_at_site = ds_at_site.drop(dropthis)
@@ -921,11 +1036,11 @@ class Grid2SiteProjection(object):
             # ds_at_sites = ds_at_sites.expand_dims({'datetime':[row.datetime_start]})
             
             # clean up coordinates
-            ds_at_sites = ds_at_sites.drop_vars(['x','y'])
+            ds_at_sites = ds_at_sites.drop_vars([coord1, coord2])
             self._projection2poin = ds_at_sites
         return self._projection2poin
     
-    def _project2area(self, data_quality):
+    def _project2area(self, data_quality, the_new_way = True):
         """
         project data to an area around the grid point
 
@@ -935,8 +1050,8 @@ class Grid2SiteProjection(object):
             Which satellite data quality to consider. 
             Options: good, intermediate
             Note: This will work only for products that have a class defined
-            and the class has the associated attributes defined (qf_good, 
-            qf_intermediate)
+            and the class has the associated attributes defined (qf_high, 
+            qf_medium)
 
         Returns
         -------
@@ -944,43 +1059,65 @@ class Grid2SiteProjection(object):
             DESCRIPTION.
 
         """
-        
-        if hasattr(self.grid, "valid_qf"):
-            valid_qf = self.grid.valid_qf
-            data_quality = 'custom'
-        else:
-            assert(hasattr(self.grid, 'qf_good')), 'Make sure the satellite product instance has the attributes qf_good and qf_intermediate defined.'
-            if data_quality == 'good':
-                valid_qf = self.grid.qf_good
-            elif data_quality == 'intermediate':
-                valid_qf = self.grid.qf_intermediate + self.grid.qf_good
+        if self.grid.grid_type == 'scan_angle':
+            coord1, coord2 = 'x', 'y'
+        elif self.grid.grid_type == 'lonlat':
+            coord1, coord2 = 'lon', 'lat'
+        if the_new_way:
+            if data_quality == 'high':
+                ds = self.grid.data_by_quality_high
+            elif data_quality == 'high_medium':
+                ds = self.grid.data_by_quality_high_medium
+            elif data_quality == 'high_medium_low':
+                ds = self.grid.data_by_quality_high_medium_low
+            elif data_quality == 'medium':
+                ds = self.grid.data_by_quality_medium
+            elif data_quality == 'low':
+                ds = self.grid.data_by_quality_low
             else:
-                assert(False), f'data_quality "{data_quality}" not in [good, intermediate].'
-        
-        
-        
-        # select relevant variablese ... those with x and y
-        var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
-        
-        self.tp_var_sel = var_sel
-        # lat and lon might be present if lonlat was executed prior to this ... remove it
-        if 'lon' in var_sel:
-            var_sel.pop(var_sel.index('lon'))
-            var_sel.pop(var_sel.index('lat'))
-        
-        ds = self.grid.ds[var_sel]
-        
-        # cleanup the the coordinates
-        coords2del = list(ds.coords)
-        coords2del.remove('x')
-        coords2del.remove('y')
-        ds = ds.drop_vars(coords2del)
-        
-        # self.tp_ds_1 = ds.copy()
-        # select only those values where QF is valid, only works if valid_qf was set.
-        # assert(not isinstance(self.grid.valid_qf, type(None))), 'valid_qf can not be None, the file could probably not be assigned to a particular satellite product!!'
-        # if not isinstance(self.grid.valid_qf, type(None)):
-        ds = ds.where(ds.DQF.isin(valid_qf))
+                assert(False), f'data_quality not recognized: {data_quality}'
+                
+            # var_sel = [var for var in ds.variables if ds[var].dims == ('y', 'x')]
+            var_sel = self.grid.valid_2D_variables
+            # ds = self.grid.ds[self.grid.valid_2D_variables]
+            
+        else:
+            if hasattr(self.grid, "valid_qf"):
+                valid_qf = self.grid.valid_qf
+                data_quality = 'custom'
+            else:
+                assert(hasattr(self.grid, 'qf_high')), 'Make sure the satellite product instance has the attributes qf_high and qf_medium defined.'
+                if data_quality == 'high':
+                    valid_qf = self.grid.qf_high
+                elif data_quality == 'medium':
+                    valid_qf = self.grid.qf_medium + self.grid.qf_high
+                else:
+                    assert(False), f'data_quality "{data_quality}" not in [good, intermediate].'
+            
+            
+            
+            # select relevant variablese ... those with x and y
+            
+            var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
+            
+            self.tp_var_sel = var_sel
+            # lat and lon might be present if lonlat was executed prior to this ... remove it
+            if 'lon' in var_sel:
+                var_sel.pop(var_sel.index('lon'))
+                var_sel.pop(var_sel.index('lat'))
+                        
+            ds = self.grid.ds[var_sel]
+            # cleanup the  coordinates
+            coords2del = list(ds.coords)
+            coords2del.remove('x')
+            coords2del.remove('y')
+            ds = ds.drop_vars(coords2del)
+            
+            # self.tp_ds_1 = ds.copy()
+            # select only those values where QF is valid, only works if valid_qf was set.
+            # assert(not isinstance(self.grid.valid_qf, type(None))), 'valid_qf can not be None, the file could probably not be assigned to a particular satellite product!!'
+            # if not isinstance(self.grid.valid_qf, type(None)):
+            ds = ds.where(ds.DQF.isin(valid_qf))
         # self.tp_ds_2 = ds.copy()
         for e,radius in enumerate(self.radii):
             where = self.distance_grids < radius
@@ -988,27 +1125,28 @@ class Grid2SiteProjection(object):
             ds_sel = ds.where(where)
         
             # median
-            dst = ds_sel.median(dim = ['x', 'y'])
+            # dst = ds_sel.median(dim = ['x', 'y'])
+            dst = ds_sel.median(dim = [coord1, coord2])
             dst = dst.expand_dims({'stats':['median']})
         
             ds_area = dst
         
             #mean
-            dst = ds_sel.mean(dim = ['x', 'y'])
+            dst = ds_sel.mean(dim = [coord1, coord2])
             dst = dst.expand_dims({'stats':['mean']})
         
             ds_area = _xr.concat([ds_area, dst], 'stats')
         
             # std ... "un"-biased
-            dst = ds_sel.std(dim = ['x', 'y'], 
+            dst = ds_sel.std(dim = [coord1, coord2], 
                        ddof=1,
                       )
             dst = dst.expand_dims({'stats':['std']})
             ds_area = _xr.concat([ds_area, dst], 'stats')
         
             # no of valid points
-            ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
-            ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
+            ds_area['num_of_valid_points'] = where.sum(dim = [coord1, coord2])
+            # ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
             
             ds_area = ds_area.expand_dims({'radius': [radius]})
             if e == 0:
@@ -1026,9 +1164,11 @@ class Grid2SiteProjection(object):
         ds_area_all.stats.attrs['long_name'] = 'Statistics of values in circlular area around site'
         ds_area_all.num_of_valid_points.attrs['long_name'] = 'Number of valid data points used to calculating statistic.'
         
-        if data_quality != 'custom':
-            ds_area_all = ds_area_all.expand_dims({'data_quality':[data_quality,]})
-            ds_area_all.data_quality.attrs[f'valid_qf_{data_quality}'] = valid_qf
+        if not the_new_way:
+            if data_quality != 'custom':
+                ds_area_all = ds_area_all.expand_dims({'data_quality':[data_quality,]})
+                ds_area_all.data_quality.attrs[f'valid_qf_{data_quality}'] = valid_qf
+        ds_area_all = ds_area_all.assign_coords({'data_quality': [data_quality,]})
         return ds_area_all
        
     @property
@@ -1037,9 +1177,26 @@ class Grid2SiteProjection(object):
             if hasattr(self.grid, "valid_qf"):
                 self._projection2area = self.projection2area('custom')
             else:
-                outg = self._project2area('good')
-                outi = self._project2area('intermediate')    
-                out = _xr.concat([outg, outi], dim = 'data_quality', combine_attrs='drop_conflicts')
+                out = []
+                out.append(self._project2area('high'))
+                try:
+                    out.append(self._project2area('high_medium'))
+                except KeyError:
+                    pass
+                try:
+                    out.append(self._project2area('high_medium_low') )
+                except KeyError:  
+                    pass
+                try:
+                    out.append(self._project2area('medium'))
+                except KeyError:
+                    pass
+                try:
+                    out.append(self._project2area('low'))
+                except KeyError:
+                    pass
+                # self.tp_outl = outl.copy()
+                out = _xr.concat(out, dim = 'data_quality', combine_attrs='drop_conflicts')
                 self._projection2area = out
         return self._projection2area
     
@@ -1157,12 +1314,24 @@ class Grid2SiteProjection(object):
             #     out[e,6] = dist[argmin]
             out, dist_array = get_dists(self.grid.lonlat, lon_lat_sites)
             # return out
-            dist_array = _xr.DataArray(data = dist_array,
-                                     dims = ['y','x','site'],
-                                     coords = {'site': idx,
-                                               'x': self.grid.ds.x,
-                                               'y': self.grid.ds.y}
-                                    )
+            if self.grid.grid_type == 'scan_angle':
+                dist_array = _xr.DataArray(data = dist_array,
+                                         dims = ['y','x','site'],
+                                         coords = {'site': idx,
+                                                   'x': self.grid.ds.x,
+                                                   'y': self.grid.ds.y}
+                                        )
+                
+            elif self.grid.grid_type == 'lonlat':
+                assert('lon' in self.grid.ds.coords), 'arrrrg, not possible'
+                dist_array = _xr.DataArray(data = dist_array,
+                                         dims = ['lat','lon','site'],
+                                         coords = {'site': idx,
+                                                   'lon': self.grid.ds.lon,
+                                                   'lat': self.grid.ds.lat}
+                                        )
+            else:
+                assert(False), 'nenen geht nich'
             self._distance_grids = dist_array
             self._closest_points = _pd.DataFrame(out, columns = ['argmin_x', 'argmin_y','lon_gritpoint', 'lat_gridpoint', 'lon_station', 'lat_station', 'distance_station_gridpoint'], index = idx)
             # closest_point = closest_point[closest_point.distance_station_gridpoint < discard_outsid_grid]
@@ -1170,6 +1339,106 @@ class Grid2SiteProjection(object):
             # out_dict['last_distance_grid'] = dist.astype(_np.float32)
         return self._closest_points
 
+class QfManagment(object):
+    def __init__(self, satellite_instance, qf_representation = 'as_is', qf_by_variable = None, global_qf = None, number_of_bits = None):
+        self.satellite_instance = satellite_instance
+        if qf_representation == 'binary':
+            assert(isinstance(number_of_bits, int)), 'If qf_representation is "binary" the number_of_bits kwarg has to be set (integer).'
+            self.qf_by_variable_binary = qf_by_variable
+            self._qf_by_variable = None
+        else:
+            self._qf_by_variable = qf_by_variable
+        self.qf_representation = qf_representation
+        self.number_of_bits = number_of_bits
+        self.global_qf = global_qf
+    
+    @property
+    def qf_by_variable(self):
+        if isinstance(self._qf_by_variable, type(None)):
+            assert(not isinstance(self.qf_representation, type(None))), 'Either  qf_by_variable is not set or something is strange'
+            self._qf_by_variable = self.get_assesment_mask()
+        return self._qf_by_variable
+    
+    @qf_by_variable.setter
+    def qf_by_variable(self, value):
+        self._qf_by_variable = value
+    
+    def get_assesment_mask(self):
+        def asses_qf(quality_flag, width, criteria):
+            # width = 8
+            # criteria = [smoke_qf, global_qf]
+        
+            @vectorize([int8(float32)], target = 'cpu')
+            def _asses_qf(qf):
+                if _np.isnan(qf):
+                    return 0
+                else:
+                    qf = _np.int16(qf)
+                    
+                bins = _np.binary_repr(qf, width = width)[::-1]
+
+                asses_list = []
+                qf_list = []
+                for cr in criteria:
+                    if isinstance(cr, dict):
+                        cr = [cr,]
+                    qf_list+= cr
+        
+                for e,sqf in enumerate(qf_list):
+                    for k in sqf:
+                        sqfitem = sqf[k]
+                        k = {'bad': 0, 'low':1, 'medium':2, 'high':3}[k]
+        
+                        b = ''
+                        for pos in sqfitem['bins']:
+                            b+=bins[pos]
+                        b = b[::-1] # since we reversed the sting we have to revers it back ... sorry :-)
+        
+                        if int(b,2) in sqfitem['values']:
+                            asses_list.append(k)
+                asses_list.sort()
+                return asses_list[0]
+            return zip(quality_flag,_asses_qf(quality_flag))
+        
+        if self.qf_representation == 'binary':
+            gfbyvarible = {}
+            ds = self.satellite_instance.ds
+            for var in self.qf_by_variable_binary:
+                if self.qf_by_variable_binary[var] == 'ignore':
+                    gfbyvarible[var] = 'ignore'
+                    continue
+                qfdicts = [self.qf_by_variable_binary[var],]
+                if not isinstance(self.global_qf, type(None)):
+                    qfdicts += self.global_qf
+                    
+                qf_asses_match = asses_qf(_np.unique(ds.DQF),8, qfdicts)
+                qf_asses_match = list(qf_asses_match)
+        
+                #### seperate into 
+                gfdict = {}
+                gfdict['bad'] = [qam[0] for qam in qf_asses_match if qam[1] == 0 ]
+                gfdict['low'] = [qam[0] for qam in qf_asses_match if qam[1] == 1 ]
+                gfdict['medium'] = [qam[0] for qam in qf_asses_match if qam[1] == 2 ]
+                gfdict['high'] = [qam[0] for qam in qf_asses_match if qam[1] == 3 ]
+                gfbyvarible[var] = gfdict
+                # ds.Smoke # all
+                # ds.Smoke.where(ds.DQF.isin(qf_high))
+                # ds.Smoke.where(ds.DQF.isin(qf_high + qf_medium))
+                # ds.Smoke.where(ds.DQF.isin(qf_high + qf_medium + qf_low))
+        elif self.qf_representation == 'as_is':
+            assert(len(self.global_qf) == 1), "programming qurired, iterate over the additional list items"
+            gfbyvarible = {}
+            for var in self.satellite_instance.valid_2D_variables:
+                gfbyvarible[var] = self.global_qf[0]
+        else:
+            assert(False)
+            
+        return gfbyvarible
+
+            
+
+####---------------------------
+#### Products classes
 class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
@@ -1289,11 +1558,73 @@ class ABI_L2_ACM(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Clear Sky Mask'''
         super().__init__(*args)
-        self.qf_good = [0,]
-        self.qf_intermediate = [2,4,5,6]
+        self.qf_high = [0,]
+        self.qf_medium = [2,4,5,6]
+        self.qf_low = None
         self.qf_bad = [1,3]
+   
+#######################################
+#### Below use assesment dataset
+#################################
+class ABI_L2_ADP(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Clear Sky Mask'''
+        super().__init__(*args)
+        # self.qf_representation = 'binary'
+        qf_by_variable =  {'Aerosol': 'ignore',
+                           'Smoke': {"bad":    {'bins': [0,],  'values':[1,]},
+                                     "low" :   {'bins': [2,3], 'values':[0,]},
+                                     "medium": {'bins': [2,3], 'values':[1,]},
+                                     "high":   {'bins': [2,3], 'values':[3,]},},
+                            'Dust': {"bad":    {'bins': [1,],  'values':[1,]},
+                                     "low" :   {'bins': [4,5], 'values':[0,]},
+                                     "medium": {'bins': [4,5], 'values':[1,]},
+                                     "high":   {'bins': [4,5], 'values':[3,]},}}
+        
+        global_qf = [{'bad': {'bins': [6], 'values': [1]}}, {'bad': {'bins': [7], 'values': [1]}}]
+        self.qf_managment = QfManagment(self, qf_representation='binary', qf_by_variable = qf_by_variable, global_qf= global_qf, number_of_bits=8)
         
         
+        
+class ABI_L2_ACHA(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Cloud Top Height'''
+        super().__init__(*args)
+        
+        global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
+        
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        global_qf= global_qf, 
+                                       )
+        
+class ABI_L2_CTP(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Cloud Top Pressure'''
+        super().__init__(*args)
+        
+        global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
+        
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        global_qf= global_qf, 
+                                       )
+class ABI_L2_DSR(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Downwelling Shortwave Radiation'''
+        super().__init__(*args)
+        
+        global_qf = [{'high': [0], 'bad': [1,]}]
+        
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        # qf_representation='binary', 
+                                        # qf_by_variable = qf_by_variable, 
+                                        global_qf= global_qf, 
+                                        # number_of_bits=8
+                                       )
+########################################################
+#### Is this still used?
 abi_products = [{'product_name': 'ABI-L2-ACHA',
                 'long_name': 'Cloud Top Height', 
                 'satlab_class': ABI_L2_ACHA},
