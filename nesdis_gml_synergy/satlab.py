@@ -13,7 +13,7 @@ import pandas as _pd
 import matplotlib.pyplot as _plt
 import mpl_toolkits.basemap as _basemap
 import os as _os
-import numba as _numba
+# import numba as _numba
 import multiprocessing as _mp
 import functools as _functools
 from numba import vectorize, int8, float32
@@ -238,8 +238,9 @@ class ProjectionProject(object):
             pool = _mp.Pool(processes=no_of_cpu)
             idx, rows = zip(*list(wpt.iterrows()))
             # out['pool_return'] = pool.map(partial(process_workplan_row, **{'ftp_settings': ftp_settings, 'sites': sites}), rows)
-            out = {}
-            pool_return = pool.map(_functools.partial(WorkplanEntry, **{'project': self, 'autorun': True}), rows)
+            # out = {}
+            # pool_return = 
+            pool.map(_functools.partial(WorkplanEntry, **{'project': self, 'autorun': True}), rows)
             # out['pool_return'] = pool_return
             
             pool.close() # no more tasks
@@ -288,11 +289,16 @@ class WorkplanEntry(object):
 class Concatonator(object):
     def __init__(self, path2scraped_files = '/mnt/telg/tmp/class_tmp_inter/point',
                        path2concat_files = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/point',
+                       datetime_format = 'ABI_L2_ACHA_projected2surfrad_%Y%m%d_%H%M%S.nc',
+                       rule = 'daily',
                        skip_last_day = False,
                        test = False):
+        
+        assert(rule == 'daily'), f'Sorry, only rule="daily" works so far... programming required if you want to use "{rule}"'
         self.path2scraped_files = _pl.Path(path2scraped_files)
         self.path2concat_files = _pl.Path(path2concat_files)
         self.skip_last_day = skip_last_day
+        self.datetime_format = datetime_format
         try:
             self.path2concat_files.mkdir(exist_ok=True)
         except:
@@ -311,7 +317,7 @@ class Concatonator(object):
             
             # get datetime
             # df['datetime_start'] =df.apply(lambda row: _pd.to_datetime(row.path2intermediate_file_point.name.split('_')[3][1:-1], format = '%Y%j%H%M%S'), axis = 1)
-            workplan['datetime'] =workplan.apply(lambda row: _pd.to_datetime(row.path2scraped_files.name.split('_')[4][1:-1], format = '%Y%j%H%M%S'), axis = 1)
+            workplan['datetime'] =workplan.apply(lambda row: _pd.to_datetime(row.path2scraped_files.name, format = self.datetime_format), axis = 1)
            
             # if 0:
                 # get the date
@@ -340,8 +346,56 @@ class Concatonator(object):
             
         return self._workplan
     
+    def concat_and_save(self, save = True, test = False, verbose = False):
+        """
+        Processes the workplan.
+
+        Parameters
+        ----------
+        save : bool, optional
+            For testing, False will skip the saving; still returns the DataSet. The default is True.
+        test : bool, optional
+            If True only the first line will be processed. The default is False.
+        verbose : bool, optional
+            Some info along the way. The default is False.
+
+        Returns
+        -------
+        The last concatinated xarray.DataSet.
+
+        """
+        for date,date_group in self.workplan.groupby('date'):
+            try:
+                # ds = xr.concat(fc_list, dim = 'datetime')
+                ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
+            except ValueError as err:
+                errmsg = err.args[0]
+                err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
+                raise
+
+            fn_out = date_group.path2concat_files.unique()
+            assert(len(fn_out) == 1), 'not possible ... I think'
+            # concat.append({'dataset': ds, 'fname': fn_out[0]})
+            if verbose:
+                print(f'Saving to {fn_out[0]}.')
+            if save:
+                ds.to_netcdf(fn_out[0])  
+            if test:
+                break
+        if verbose:
+            print('Done')
+        return ds
+    
     @property
-    def concatenated(self):
+    def deprecated_concatenated(self):
+        """
+        This is not a good idea to keep all those files open!
+
+        Returns
+        -------
+        None.
+
+        """
         if isinstance(self._concatenated, type(None)):
             concat = []
             for date,date_group in self.workplan.groupby('date'):
@@ -353,7 +407,7 @@ class Concatonator(object):
             
                 try:
                     # ds = xr.concat(fc_list, dim = 'datetime')
-                    ds = _xr.open_mfdataset(date_group.path2scraped_files, concat_dim='datetime')
+                    ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
                 except ValueError as err:
                     errmsg = err.args[0]
                     err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
@@ -368,11 +422,21 @@ class Concatonator(object):
         return self._concatenated
 #                 ds.to_netcdf(fn_out[0])
         
-    def save(self):
+    def deprecated_save(self):
+        """
+        As above, its just not a good idea to keep all those files open
+        Save concatenated files to path as shown in workplan. Also conducts the concatination if not done yet.
+
+        Returns
+        -------
+        Last concatinated DateSet instance.
+
+        """
         for daydict in self.concatenated:
             daydict['dataset'].to_netcdf(daydict['fname'])  
             if self.test:
                 break
+        return daydict['dataset']
             
 
 class SatelliteMovie(object):
@@ -1079,6 +1143,7 @@ class Grid2SiteProjection(object):
                 
             # var_sel = [var for var in ds.variables if ds[var].dims == ('y', 'x')]
             var_sel = self.grid.valid_2D_variables
+            # var_sel = list(ds.variables)
             # ds = self.grid.ds[self.grid.valid_2D_variables]
             
         else:
@@ -1156,7 +1221,10 @@ class Grid2SiteProjection(object):
         
         #### populate attributes
         for var in var_sel:
-            ds_area_all[var].attrs = ds[var].attrs
+            try:
+                ds_area_all[var].attrs = ds[var].attrs
+            except KeyError:
+                continue
             # ds_area_all[var].attrs['data_quality_assessment'] = data_quality
             # ds_area_all[var].attrs['data_quality_valid_qfs'] = valid_qf
             
@@ -1290,7 +1358,7 @@ class Grid2SiteProjection(object):
                 idx = range(len(lon_lat_sites))
             lon_g, lat_g = self.grid.lonlat
             # armins columns: argmin_x, argmin_y, lon_g, lat_g, lon_s, lat_s, dist_min
-            out_dict = {}
+            # out_dict = {}
             
         #     if len(lon_g.shape) == 3:
         #         lon_g = lon_g[0,:,:]
@@ -1542,11 +1610,11 @@ class ABI_L2_LST(GeosSatteliteProducts):
         super().__init__(*args)
         self.valid_qf = [0,]
         
-class ABI_L2_ACHA(GeosSatteliteProducts):
-    def __init__(self, *args):
-        '''Cloud Top Height'''
-        super().__init__(*args)
-        # self.valid_qf = [0,]    
+# class ABI_L2_ACHA(GeosSatteliteProducts):
+#     def __init__(self, *args):
+#         '''Cloud Top Height'''
+#         super().__init__(*args)
+#         # self.valid_qf = [0,]    
         
 class ABI_L2_COD(GeosSatteliteProducts):
     def __init__(self, *args):

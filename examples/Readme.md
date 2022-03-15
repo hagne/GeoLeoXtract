@@ -1,6 +1,5 @@
 Todo
 ============
-* make sure DSR makes sense
 * next project
 * revisit old project with n
 * remove test points!ew qf managment
