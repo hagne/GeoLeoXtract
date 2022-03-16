@@ -1620,20 +1620,31 @@ class ABI_L2_COD(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Cloud Optical Depth'''
         super().__init__(*args)
-        self.valid_qf = [0,]    
+        self.valid_qf = [0,]  
+   
+#######################################
+#### Below use assesment dataset
+#################################  
 
 class ABI_L2_ACM(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Clear Sky Mask'''
         super().__init__(*args)
-        self.qf_high = [0,]
-        self.qf_medium = [2,4,5,6]
-        self.qf_low = None
-        self.qf_bad = [1,3]
-   
-#######################################
-#### Below use assesment dataset
-#################################
+        
+        # self.qf_high = [0,]
+        # self.qf_medium = [2,4,5,6]
+        # self.qf_low = None
+        # self.qf_bad = [1,3]
+        
+        global_qf = [{'high':   [0], 
+                      'medium': [2,4,5,6],
+                      'bad':    [1,3]}]
+        
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        global_qf= global_qf, 
+                                       )
+        
 class ABI_L2_ADP(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Clear Sky Mask'''
