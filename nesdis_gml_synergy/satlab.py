@@ -1101,6 +1101,44 @@ class Grid2SiteProjection(object):
             
             # clean up coordinates
             ds_at_sites = ds_at_sites.drop_vars([coord1, coord2])
+            
+            #### assess DQF
+            qf_by_variable = self.grid.qf_managment.qf_by_variable
+            variables = list(ds_at_sites.variables)
+
+            for var in qf_by_variable:
+                # add DQF assessed variable and set to nans
+                varname = f'{var}_DQF_assessed'
+                dsdqfass= ds_at_sites.DQF.copy()
+                dsdqfass[:] = _np.nan
+            
+                # this is just for the reorganization of the variables
+                variables.insert(variables.index(var)+1, varname)
+            
+                # set the assest DQF values
+                dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['high'])] = 0
+                if 'medium' in qf_by_variable[var].keys():
+                    dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['medium'])] = 1
+                
+                if 'low' in qf_by_variable[var].keys():
+                    dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['low'])] = 2
+                    
+                dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])] = 3
+                
+                # add some attributes
+                dsdqfass.attrs = {}
+                dsdqfass.attrs['long_name'] = 'Assessed quality flag. This created by the nesdis_gml_synergy package so simplify quality flags.'
+                dsdqfass.attrs['values'] = [0,1,2,3]
+                dsdqfass.attrs['meaning'] = '0-high_quality 1-medium_quality 2-low_quality 3-bad'
+                
+                # add to dataset
+                ds_at_sites[varname] = dsdqfass.astype(_np.int8)
+            
+            
+            # reorganize variables for user convenience
+            ds_at_sites = ds_at_sites[variables]
+            
+            
             self._projection2poin = ds_at_sites
         return self._projection2poin
     
@@ -1165,7 +1203,6 @@ class Grid2SiteProjection(object):
             
             var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
             
-            self.tp_var_sel = var_sel
             # lat and lon might be present if lonlat was executed prior to this ... remove it
             if 'lon' in var_sel:
                 var_sel.pop(var_sel.index('lon'))
@@ -1178,12 +1215,10 @@ class Grid2SiteProjection(object):
             coords2del.remove('y')
             ds = ds.drop_vars(coords2del)
             
-            # self.tp_ds_1 = ds.copy()
             # select only those values where QF is valid, only works if valid_qf was set.
             # assert(not isinstance(self.grid.valid_qf, type(None))), 'valid_qf can not be None, the file could probably not be assigned to a particular satellite product!!'
             # if not isinstance(self.grid.valid_qf, type(None)):
             ds = ds.where(ds.DQF.isin(valid_qf))
-        # self.tp_ds_2 = ds.copy()
         for e,radius in enumerate(self.radii):
             where = self.distance_grids < radius
         
@@ -1263,7 +1298,6 @@ class Grid2SiteProjection(object):
                     out.append(self._project2area('low'))
                 except KeyError:
                     pass
-                # self.tp_outl = outl.copy()
                 out = _xr.concat(out, dim = 'data_quality', combine_attrs='drop_conflicts')
                 self._projection2area = out
         return self._projection2area
@@ -1286,12 +1320,10 @@ class Grid2SiteProjection(object):
             coords2del.remove('y')
             ds = ds.drop_vars(coords2del)
             
-            # self.tp_ds_1 = ds.copy()
             # select only those values where QF is valid, only works if valid_qf was set.
             # assert(not isinstance(self.grid.valid_qf, type(None))), 'valid_qf can not be None, the file could probably not be assigned to a particular satellite product!!'
             if not isinstance(self.grid.valid_qf, type(None)):
                 ds = ds.where(ds.DQF.isin(self.grid.valid_qf))
-            # self.tp_ds_2 = ds.copy()
             for e,radius in enumerate(self.radii):
                 where = self.distance_grids < radius
             
@@ -1334,7 +1366,6 @@ class Grid2SiteProjection(object):
             ds_area_all.num_of_valid_points.attrs['long_name'] = 'Number of valid data points used to calculating statistic.'
             
             self._projection2area = ds_area_all
-            # self.tp_ds_sel = ds_sel
         return self._projection2area
             
     @property
@@ -1409,6 +1440,27 @@ class Grid2SiteProjection(object):
 
 class QfManagment(object):
     def __init__(self, satellite_instance, qf_representation = 'as_is', qf_by_variable = None, global_qf = None, number_of_bits = None):
+        """
+        
+
+        Parameters
+        ----------
+        satellite_instance : TYPE
+            DESCRIPTION.
+        qf_representation : str, optional
+            How the DQF values ought to be represented, "as is" or "binary". The default is 'as_is'.
+        qf_by_variable : TYPE, optional
+            DESCRIPTION. The default is None.
+        global_qf : TYPE, optional
+            DESCRIPTION. The default is None.
+        number_of_bits : TYPE, optional
+            DESCRIPTION. The default is None.
+
+        Returns
+        -------
+        None.
+
+        """
         self.satellite_instance = satellite_instance
         if qf_representation == 'binary':
             assert(isinstance(number_of_bits, int)), 'If qf_representation is "binary" the number_of_bits kwarg has to be set (integer).'
@@ -1471,15 +1523,21 @@ class QfManagment(object):
         if self.qf_representation == 'binary':
             gfbyvarible = {}
             ds = self.satellite_instance.ds
-            for var in self.qf_by_variable_binary:
-                if self.qf_by_variable_binary[var] == 'ignore':
-                    gfbyvarible[var] = 'ignore'
-                    continue
-                qfdicts = [self.qf_by_variable_binary[var],]
+            if isinstance(self.qf_by_variable_binary, type(None)):
+                variables = self.satellite_instance.valid_2D_variables
+            else:
+                variables = self.qf_by_variable_binary
+            qfdicts = []
+            for var in variables:
+                if not isinstance(self.qf_by_variable_binary, type(None)):
+                    if self.qf_by_variable_binary[var] == 'ignore':
+                        gfbyvarible[var] = 'ignore'
+                        continue
+                    qfdicts += [self.qf_by_variable_binary[var],]
                 if not isinstance(self.global_qf, type(None)):
                     qfdicts += self.global_qf
-                    
-                qf_asses_match = asses_qf(_np.unique(ds.DQF),8, qfdicts)
+                assert(len(qfdicts)>0), "this should not be possible"
+                qf_asses_match = asses_qf(_np.unique(ds.DQF),self.number_of_bits, qfdicts)
                 qf_asses_match = list(qf_asses_match)
         
                 #### seperate into 
@@ -1616,15 +1674,30 @@ class ABI_L2_LST(GeosSatteliteProducts):
 #         super().__init__(*args)
 #         # self.valid_qf = [0,]    
         
-class ABI_L2_COD(GeosSatteliteProducts):
-    def __init__(self, *args):
-        '''Cloud Optical Depth'''
-        super().__init__(*args)
-        self.valid_qf = [0,]  
+# class ABI_L2_COD(GeosSatteliteProducts):
+#     def __init__(self, *args):
+#         '''Cloud Optical Depth'''
+#         super().__init__(*args)
+#         self.valid_qf = [0,]  
    
 #######################################
 #### Below use assesment dataset
 #################################  
+class ABI_L2_COD(GeosSatteliteProducts):
+    def __init__(self, *args, night = False):
+        '''Cloud Optical Depth'''
+        super().__init__(*args)
+        # self.valid_qf = [0,]  
+        if night:
+            qf0bad = 0
+        else:
+            qf0bad = 1 
+        global_qf = [{'bad':   {'bins': [0], 'values': [qf0bad,]}}, 
+                     {'high':   {'bins': [1,2,3,4], 'values': [0]}},  
+                     {'medium': {'bins': [1,2,3,4], 'values': [1,2,5,8]}},
+                     {'bad': {'bins': [1,2,3,4], 'values': [3,4,6,7]}},
+                    ]
+        self.qf_managment = QfManagment(self, qf_representation='binary', global_qf=global_qf, number_of_bits=5)
 
 class ABI_L2_ACM(GeosSatteliteProducts):
     def __init__(self, *args):
@@ -1702,6 +1775,71 @@ class ABI_L2_DSR(GeosSatteliteProducts):
                                         global_qf= global_qf, 
                                         # number_of_bits=8
                                        )
+        
+############################################
+#### specialized function ... probably of limited usefullness for the average user    
+def projection_function(row, stations):
+    """
+    This function is used for on the fly processing (projection to site) for the nedis_aws package.
+    The function allows for projection while downloading and subsequent discarding 
+    of satellite data 
+
+    Parameters
+    ----------
+    row : TYPE
+        DESCRIPTION.
+    stations : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+
+    # read the file
+    ngsinst = open_file(row.path2file_local)
+    
+    # project to stations
+    projection = ngsinst.project_on_sites(stations)
+
+    # merge closest gridpoint and area
+    point = projection.projection2point.copy()#.sel(site = 'TBL')
+    point['DQF'] = point.DQF.astype(int) # for some reason this was float64... because there are some nans in there
+    
+    # change var names to distinguish from area
+    for var in ngsinst.valid_2D_variables:
+        point = point.rename({var: f'{var}_on_pixel',})
+        point = point.rename({f'{var}_DQF_assessed': f'{var}_on_pixel_DQF_assessed',})
+    point = point.rename({'DQF': 'DQF_on_pixel'})
+    
+    # merge aerea and point
+    ds = projection.projection2area.merge(point)#.rename({alt_var: f'{alt_var}_on_pixel', 'DQF': 'DQF_on_pixel'}))
+    
+    # add a time stamp
+    dt = _pd.Series([_pd.to_datetime(ngsinst.ds.attrs['time_coverage_start']), _pd.to_datetime(ngsinst.ds.attrs['time_coverage_end'])]).mean().to_datetime64()
+    ds = ds.expand_dims({'datetime': [dt]}, )
+    
+    # there was another time coordinate without dimention though ... dropit
+    ds = ds.drop_vars('t')
+
+    # global attribute
+    ds.attrs['info'] = ('This file contains a projection of satellite data onto SURFRAD sites.\n'
+                         'It includes the closest pixel data as well as the average over circular\n'
+                         'areas with various radii. Note, for the averaged data only data is\n'
+                         'considered with a qulity flag given by the prooduct class in the\n'
+                         'nesdis_gml_synergy package.')
+    
+
+    # save2file
+    ds.to_netcdf(row.path2file_local_processed)
+    # Memory kept on piling up -> maybe a cleanup will help
+    ds.close()
+    ds = None
+    ngsinst.ds.close()
+    ngsinst = None
+    return 
+
 ########################################################
 #### Is this still used?
 abi_products = [{'product_name': 'ABI-L2-ACHA',
