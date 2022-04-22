@@ -1220,9 +1220,9 @@ class Grid2SiteProjection(object):
             # if not isinstance(self.grid.valid_qf, type(None)):
             ds = ds.where(ds.DQF.isin(valid_qf))
         for e,radius in enumerate(self.radii):
-            where = self.distance_grids < radius
+            wheres = self.distance_grids < radius
         
-            ds_sel = ds.where(where)
+            ds_sel = ds.where(wheres)
         
             # median
             # dst = ds_sel.median(dim = ['x', 'y'])
@@ -1245,7 +1245,7 @@ class Grid2SiteProjection(object):
             ds_area = _xr.concat([ds_area, dst], 'stats')
         
             # no of valid points
-            ds_area['num_of_valid_points'] = where.sum(dim = [coord1, coord2])
+            ds_area['num_of_valid_points'] = wheres.sum(dim = [coord1, coord2])
             # ds_area['num_of_valid_points'] = where.sum(dim = ['x','y'])
             
             ds_area = ds_area.expand_dims({'radius': [radius]})
@@ -1485,10 +1485,12 @@ class QfManagment(object):
     
     def get_assesment_mask(self):
         def asses_qf(quality_flag, width, criteria):
+            # print(f'type of criteria: {type(criteria)} ... {criteria}')
             # width = 8
             # criteria = [smoke_qf, global_qf]
-        
-            @vectorize([int8(float32)], target = 'cpu')
+            
+            #### FIXME below I set forceobj to avoid the fallback warning. It would be nice to use nopython= True which causese an error :-(
+            @vectorize([int8(float32)], target = 'cpu', forceobj = True)
             def _asses_qf(qf):
                 if _np.isnan(qf):
                     return 0
@@ -1838,6 +1840,7 @@ def projection_function(row, stations):
     ds = None
     ngsinst.ds.close()
     ngsinst = None
+    
     return 
 
 ########################################################

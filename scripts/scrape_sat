@@ -4,6 +4,8 @@
 Created on Fri Jan  8 16:39:35 2021
 
 @author: hagen
+
+This is an old script that is probably not used anymore?!?
 """
 
 from nesdis_gml_synergy import satscraper
