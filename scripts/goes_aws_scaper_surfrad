@@ -250,7 +250,7 @@ def main(todo, comment = ''):
                 pma = p.memory_info().rss * 1e-9
                 if pma > procdic['memorylimit']:
                     dt = (pd.Timestamp.now(tz = 'UTC') - pd.to_datetime(p.create_time(), unit = 's').tz_localize('UTC')) / pd.to_timedelta(1, unit = 'H')
-                    write2log(fnlog, 1, 0, 0, 1, f'{procdic["name"]}, {comment}', f'restart (ran for {dt:0.1f} hours after exceeding {procdic["memorylimit"]} GB)')
+                    write2log(fnlog, 1, 0, 0, 1, f'{procdic["name"]}; {comment}', f'restart (ran for {dt:0.1f} hours after exceeding {procdic["memorylimit"]} GB)')
                     print(f'process 1 exeeds memory -> restart (ran for {dt:0.1f} hours)')
                     process1.kill()
                     
@@ -262,7 +262,7 @@ def main(todo, comment = ''):
             else:
                 # process1done = True
                 print('process 1 is done')
-                write2log(fnlog, 0, 0, 1, 0,f'{procdic["name"]}, {comment}', 'done')
+                write2log(fnlog, 0, 0, 1, 0,f'{procdic["name"]}; {comment}', 'done')
                 procdic['done'] = True
                 
         if np.all([pd['done'] for pd in todo]):
@@ -318,9 +318,9 @@ if __name__ == '__main__':
     todo_all = [{'target':processCOD1, 'done':False, 'name': 'processCOD1', 'memorylimit': memCOD},
             {'target':processCOD2, 'done':False, 'name': 'processCOD2', 'memorylimit': memCOD},
             {'target':processCOD3, 'done':False, 'name': 'processCOD3', 'memorylimit': memCOD},
-            {'target':processACM, 'done':False, 'name': 'processACM', 'memorylimit': memCOD},
-            {'target':processACM2, 'done':False, 'name': 'processACM2', 'memorylimit': memCOD},
-            {'target':processACM3, 'done':False, 'name': 'processACM3', 'memorylimit': memCOD},
+            {'target':processACM, 'done':False, 'name': 'processACM', 'memorylimit': memACM},
+            {'target':processACM2, 'done':False, 'name': 'processACM2', 'memorylimit': memACM},
+            {'target':processACM3, 'done':False, 'name': 'processACM3', 'memorylimit': memACM},
             ]
     
     todo = [td for td in todo_all if td['name'] in args.todo]
