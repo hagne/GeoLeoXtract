@@ -20,6 +20,7 @@ warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
 
 stations = surfrad.network.stations
 
+#### COD
 def processCOD(path2log = None):
     print('start', flush = True)
     product = 'COD'
@@ -69,7 +70,8 @@ def processCOD(path2log = None):
     print('done', flush = True)
     return
     
-def processACM(path2log = None):
+#### ACM
+def processACM(path2log = None, no_of_cpu = 1):
     product = 'ACM'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -94,7 +96,7 @@ def processACM(path2log = None):
                                             start='2022-01-01 00:00:00',
                                             end='2022-06-01 00:00:00',
                                             process = dict(#concatenate = 'daily',
-                                                           # function = lambda row: ngs.projection_function(row, stations), #,, alt_var),
+                                                           function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
                                                            path2processed = path2processed,
                                                             )
@@ -103,7 +105,8 @@ def processACM(path2log = None):
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
     # sys.stdout.flush()
-    query.process_parallel(no_of_cpu = 4, process_function=ngs.projection_function_multi, args={'stations': stations}, 
+    query.process_parallel(no_of_cpu = no_of_cpu, 
+                           process_function=ngs.projection_function_multi, args={'stations': stations}, 
                            path2log = path2log, 
                            subprocess = product,
                            server = socket.gethostname(),
@@ -116,6 +119,7 @@ def processACM(path2log = None):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('-n', '--todo', nargs='+', default=[], help = 'list of processes to run. To see option type jibarish here read the error message')
+    parser.add_argument('-c', '--cpus', help = 'number of cpus')
     # parser.add_argument('-t', '--test', action="store_true", help='will not execute at the end.')
     # parser.add_argument('-c', '--comment', help = 'some comment, e.g. which server this was stared on')
     args = parser.parse_args()
@@ -142,7 +146,7 @@ if __name__ == '__main__':
     
 
     for do in todo:
-        do['target'](path2log = fnlog)
+        do['target'](path2log = fnlog, no_of_cpu = int(args.cpus))
             
             # (path2log = fnlog)
     # processACM(path2log = fnlog)
