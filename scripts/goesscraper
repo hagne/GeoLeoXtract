@@ -1,0 +1,148 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Apr 29 09:37:56 2022
+
+@author: hagen
+"""
+
+
+import nesdis_aws
+import nesdis_gml_synergy.satlab as ngs
+import atmPy.data_archives.NOAA_ESRL_GMD_GRAD.surfrad.surfrad as surfrad
+import pathlib as pl
+import warnings
+import socket
+import argparse
+
+
+warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
+
+stations = surfrad.network.stations
+
+def processCOD(path2log = None):
+    print('start', flush = True)
+    product = 'COD'
+    # alt_var = 'BCM'# None, if the varialbe name is not equal to product name
+    path2processed = f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_daytime_projected2surfrad/'
+    query = nesdis_aws.nesdis_aws.AwsQuery(
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}/',
+                                            satellite='16',
+                                            product=f'ABI-L2-{product}',
+                                            scan_sector='C',
+                                            #
+                                            # for testing
+                                            # start='2020-06-01 18:00:00',
+                                            # end='2020-06-01 18:05:00',
+                                            #
+                                            # all times
+                                            start = '2022-01-01 00:00:00',
+                                            end =   '2022-06-01 10:00:00',
+                                            # CPEX spring 2020
+                                            # start='2020-03-01 00:00:00',
+                                            # end='2020-06-01 00:00:00',
+                                            #
+                                            # CPEX original
+                                            # start='2018-01-01 00:00:00',
+                                            # start='2018-11-01 13:00:00',
+                                            # end='2018-11-01 14:10:00',
+                                            process = dict(#concatenate = 'daily',
+                                                           function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
+                                                           prefix = f'ABI_L2_{product}_daytime_projected2surfrad',
+                                                           path2processed = path2processed),
+                                            # keep_files=True
+                                            verbose = True
+                                          )
+    
+    # pl.Path(f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}').mkdir()
+    # pl.Path(path2processed).mkdir()
+    # 100 lines takes about 50 min
+    # sys.stdout.flush()
+    print('make workplan', flush = True)
+    print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    # sys.stdout.flush()
+    query.process_parallel(no_of_cpu = 4, process_function=ngs.projection_function_multi, args={'stations': stations}, 
+                           path2log = path2log, 
+                           subprocess = product,
+                           server = socket.gethostname(),
+                           comment = '')
+    print('done', flush = True)
+    return
+    
+def processACM(path2log = None):
+    product = 'ACM'
+    path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
+    query = nesdis_aws.nesdis_aws.AwsQuery(
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}/',
+                                            satellite='16',
+                                            product=f'ABI-L2-{product}',
+                                            scan_sector='C',
+                                            # start='2020-03-01 18:00:00',
+                                            # end='2020-03-01 18:05:00',
+                                            #
+                                            # CPEX spring 2020
+                                            # start='2020-03-01 00:00:00',
+                                            # end='2020-06-01 00:00:00',
+                                            #
+                                            # CPEX original
+                                            # start='2018-08-01 00:00:00',
+                                            # end='2018-11-01 00:00:00',
+                                            #
+                                            # all time
+                                            # start='2017-04-20 13:00:00',
+                                            # end='2017-04-20 13:05:00',
+                                            start='2022-01-01 00:00:00',
+                                            end='2022-06-01 00:00:00',
+                                            process = dict(#concatenate = 'daily',
+                                                           # function = lambda row: ngs.projection_function(row, stations), #,, alt_var),
+                                                           prefix = f'ABI_L2_{product}_projected2surfrad',
+                                                           path2processed = path2processed,
+                                                            )
+                                            # keep_files=True
+                                          )
+    print('make workplan', flush = True)
+    print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    # sys.stdout.flush()
+    query.process_parallel(no_of_cpu = 4, process_function=ngs.projection_function_multi, args={'stations': stations}, 
+                           path2log = path2log, 
+                           subprocess = product,
+                           server = socket.gethostname(),
+                           comment = '')
+    print('done', flush = True)
+    return
+
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-n', '--todo', nargs='+', default=[], help = 'list of processes to run. To see option type jibarish here read the error message')
+    # parser.add_argument('-t', '--test', action="store_true", help='will not execute at the end.')
+    # parser.add_argument('-c', '--comment', help = 'some comment, e.g. which server this was stared on')
+    args = parser.parse_args()
+    print('args:')
+    print(args)
+    
+    todo_all = [{'name':'COD', 'target':processCOD},
+            {'name':'ACM', 'target':processACM},
+            ]
+    
+    todo = [td for td in todo_all if td['name'] in args.todo]
+    todo_invalid = [td for td in args.todo if td not in [td['name'] for td in todo_all]]
+    assert(len(todo_invalid) == 0), f'The processes {todo_invalid} are no valid options. Choose from:\n{[td["name"] for td in todo_all]}'
+    assert(len(todo) > 0), f'No valid process found. Set -n to at least one of the following options:\n{[td["name"] for td in todo_all]}'
+    assert(len(todo) == len(args.todo)), 'this should not be possible'#f'Number of valid process ({len(todo)}) not equal to number of provided todo list ({len(args.todo)}). Make sure all your choises are in the available list of processes:\n{[td["name"] for td in todo_all]}' 
+
+    print(f'process to be persued:\n{[td["name"] for td in todo]}')
+    
+    #### create log file
+    fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
+    if not fnlog.is_file():
+        with open(fnlog, 'w') as log_out:
+            log_out.write('datetime, rund_status, error, success, warning, subprocess, comment\n')
+    
+
+    for do in todo:
+        do['target'](path2log = fnlog)
+            
+            # (path2log = fnlog)
+    # processACM(path2log = fnlog)

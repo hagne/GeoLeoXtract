@@ -17,6 +17,7 @@ import os as _os
 import multiprocessing as _mp
 import functools as _functools
 from numba import vectorize, int8, float32
+import s3fs as _s3fs
 
 
 def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False):
@@ -235,12 +236,15 @@ class ProjectionProject(object):
                 wpe = WorkplanEntry(row, project = self)
                 wpe.process()
         else:
-            pool = _mp.Pool(processes=no_of_cpu)
+            # pool = _mp.Pool(processes=no_of_cpu)
+            pool = _mp.Pool(processes=no_of_cpu, maxtasksperchild=1)
             idx, rows = zip(*list(wpt.iterrows()))
             # out['pool_return'] = pool.map(partial(process_workplan_row, **{'ftp_settings': ftp_settings, 'sites': sites}), rows)
             # out = {}
             # pool_return = 
-            pool.map(_functools.partial(WorkplanEntry, **{'project': self, 'autorun': True}), rows)
+            
+            # pool.map(_functools.partial(WorkplanEntry, **{'project': self, 'autorun': True}), rows)
+            pool.map_async(_functools.partial(WorkplanEntry, **{'project': self, 'autorun': True}), rows)
             # out['pool_return'] = pool_return
             
             pool.close() # no more tasks
@@ -1781,6 +1785,109 @@ class ABI_L2_DSR(GeosSatteliteProducts):
 ############################################
 #### specialized function ... probably of limited usefullness for the average user    
 def projection_function(row, stations):
+    """
+    This function is used for on the fly processing (projection to site) for the nedis_aws package.
+    The function allows for projection while downloading and subsequent discarding 
+    of satellite data 
+
+    Parameters
+    ----------
+    row : TYPE
+        DESCRIPTION.
+    stations : TYPE
+        DESCRIPTION.
+
+    Returns
+    -------
+    None.
+
+    """
+
+    # read the file
+    ngsinst = open_file(row.path2file_local)
+    
+    # project to stations
+    projection = ngsinst.project_on_sites(stations)
+
+    # merge closest gridpoint and area
+    point = projection.projection2point.copy()#.sel(site = 'TBL')
+    point['DQF'] = point.DQF.astype(int) # for some reason this was float64... because there are some nans in there
+    
+    # change var names to distinguish from area
+    for var in ngsinst.valid_2D_variables:
+        point = point.rename({var: f'{var}_on_pixel',})
+        point = point.rename({f'{var}_DQF_assessed': f'{var}_on_pixel_DQF_assessed',})
+    point = point.rename({'DQF': 'DQF_on_pixel'})
+    
+    # merge aerea and point
+    ds = projection.projection2area.merge(point)#.rename({alt_var: f'{alt_var}_on_pixel', 'DQF': 'DQF_on_pixel'}))
+    
+    # add a time stamp
+    dt = _pd.Series([_pd.to_datetime(ngsinst.ds.attrs['time_coverage_start']), _pd.to_datetime(ngsinst.ds.attrs['time_coverage_end'])]).mean().to_datetime64()
+    ds = ds.expand_dims({'datetime': [dt]}, )
+    
+    # there was another time coordinate without dimention though ... dropit
+    ds = ds.drop_vars('t')
+
+    # global attribute
+    ds.attrs['info'] = ('This file contains a projection of satellite data onto SURFRAD sites.\n'
+                         'It includes the closest pixel data as well as the average over circular\n'
+                         'areas with various radii. Note, for the averaged data only data is\n'
+                         'considered with a qulity flag given by the prooduct class in the\n'
+                         'nesdis_gml_synergy package.')
+    
+
+    # save2file
+    ds.to_netcdf(row.path2file_local_processed)
+    # Memory kept on piling up -> maybe a cleanup will help
+    ds.close()
+    ds = None
+    ngsinst.ds.close()
+    ngsinst = None
+    
+    return 
+
+def projection_function_multi(row, stations = None):
+    # if verbose:
+    #     print('.', end = '')
+    # return 
+    verbose = True
+    if row.path2file_local_processed.is_file():
+        return
+    if not row.path2file_local.is_file():
+#             print('downloading')
+        #### download
+        # download_output = 
+        
+        #### TODO memory leak ... i did not notice that the download is done separately here... maybe try out the cach purch only
+        # self.aws.clear_instance_cache()     #-> not helping           
+        aws = _s3fs.S3FileSystem(anon=True)#, skip_instance_cache=True) #- not helping
+        aws.get(row.path2file_aws.as_posix(), row.path2file_local.as_posix())
+    #### process
+    # return
+    raise_exception = True
+    try:
+        #### TODO memory leak check if row is the same before and after
+        rowold = row.copy()
+        projection_function(row, stations)
+        if not row.equals(rowold):
+            print('row changed ... return')
+            return row, rowold
+        if verbose:
+            print(':', end = '', flush = True)
+    except:
+        if raise_exception:
+            raise
+        else:
+            print(f'error applying function on one file {row.path2file_local.name}. The raw fill will still be removed (unless keep_files is True) to avoid storage issues')
+    #### remove raw file
+    # if not self.keep_files:
+    row.path2file_local.unlink()
+    if verbose:
+        print('|', end = '', flush = True)
+    return
+
+def projection_function_test(row, stations):
     """
     This function is used for on the fly processing (projection to site) for the nedis_aws package.
     The function allows for projection while downloading and subsequent discarding 

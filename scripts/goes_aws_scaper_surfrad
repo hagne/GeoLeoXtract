@@ -314,7 +314,7 @@ if __name__ == '__main__':
     
     #### Todo ... what to process
     memCOD = 3
-    memACM = 4
+    memACM = 5
     todo_all = [{'target':processCOD1, 'done':False, 'name': 'processCOD1', 'memorylimit': memCOD},
             {'target':processCOD2, 'done':False, 'name': 'processCOD2', 'memorylimit': memCOD},
             {'target':processCOD3, 'done':False, 'name': 'processCOD3', 'memorylimit': memCOD},
