@@ -116,6 +116,35 @@ def processACM(path2log = None, no_of_cpu = 1):
     print('done', flush = True)
     return
 
+#### ADP
+def processADP(path2log = None, no_of_cpu = 1):
+    product = 'ADP'
+    path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
+    query = nesdis_aws.nesdis_aws.AwsQuery(
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}/',
+                                            satellite='16',
+                                            product=f'ABI-L2-{product}',
+                                            scan_sector='C',
+                                            start='2022-01-01 00:00:00',
+                                            end='2022-01-02 00:00:00',
+                                            process = dict(#concatenate = 'daily',
+                                                           function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
+                                                           prefix = f'ABI_L2_{product}_projected2surfrad',
+                                                           path2processed = path2processed,
+                                                            )
+                                            # keep_files=True
+                                          )
+    print('make workplan', flush = True)
+    print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    # sys.stdout.flush()
+    query.process_parallel(no_of_cpu = no_of_cpu, 
+                           process_function=ngs.projection_function_multi, args={'stations': stations}, 
+                           path2log = path2log, 
+                           subprocess = product,
+                           server = socket.gethostname(),
+                           comment = '')
+    print('done', flush = True)
+    return
 
 
 if __name__ == '__main__':
@@ -129,8 +158,9 @@ if __name__ == '__main__':
     print(args)
     
     todo_all = [{'name':'COD', 'target':processCOD},
-            {'name':'ACM', 'target':processACM},
-            ]
+                {'name':'ACM', 'target':processACM},
+                {'name':'ADP', 'target':processADP},
+                ]
     
     todo = [td for td in todo_all if td['name'] in args.todo]
     todo_invalid = [td for td in args.todo if td not in [td['name'] for td in todo_all]]
