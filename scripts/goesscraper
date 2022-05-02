@@ -21,7 +21,7 @@ warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
 stations = surfrad.network.stations
 
 #### COD
-def processCOD(path2log = None):
+def processCOD(path2log = None, no_of_cpu = 1):
     print('start', flush = True)
     product = 'COD'
     # alt_var = 'BCM'# None, if the varialbe name is not equal to product name
@@ -62,7 +62,8 @@ def processCOD(path2log = None):
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
     # sys.stdout.flush()
-    query.process_parallel(no_of_cpu = 4, process_function=ngs.projection_function_multi, args={'stations': stations}, 
+    query.process_parallel(no_of_cpu = no_of_cpu, 
+                           process_function=ngs.projection_function_multi, args={'stations': stations}, 
                            path2log = path2log, 
                            subprocess = product,
                            server = socket.gethostname(),
@@ -94,7 +95,7 @@ def processACM(path2log = None, no_of_cpu = 1):
                                             # start='2017-04-20 13:00:00',
                                             # end='2017-04-20 13:05:00',
                                             start='2022-01-01 00:00:00',
-                                            end='2022-06-01 00:00:00',
+                                            end='2022-06-02 00:00:00',
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
@@ -142,7 +143,7 @@ if __name__ == '__main__':
     fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
     if not fnlog.is_file():
         with open(fnlog, 'w') as log_out:
-            log_out.write('datetime, rund_status, error, success, warning, subprocess, comment\n')
+            log_out.write('datetime,rund_status,error,success,warning,subprocess,server,comment\n')
     
 
     for do in todo:

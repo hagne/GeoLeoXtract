@@ -1855,14 +1855,20 @@ def projection_function_multi(row, stations = None):
     if row.path2file_local_processed.is_file():
         return
     if not row.path2file_local.is_file():
+        print('^', end = '', flush = True)
 #             print('downloading')
         #### download
         # download_output = 
         
         #### TODO memory leak ... i did not notice that the download is done separately here... maybe try out the cach purch only
         # self.aws.clear_instance_cache()     #-> not helping           
-        aws = _s3fs.S3FileSystem(anon=True)#, skip_instance_cache=True) #- not helping
+        aws = _s3fs.S3FileSystem(anon=True, skip_instance_cache=True) #- not helping
+        print('.', end = '', flush = True)
+        aws.clear_instance_cache()
+        print('.', end = '', flush = True)
+        # print(f'aws.get({row.path2file_aws.as_posix()}, {row.path2file_local.as_posix()}')
         aws.get(row.path2file_aws.as_posix(), row.path2file_local.as_posix())
+        print('-', end = '', flush = True)
     #### process
     # return
     raise_exception = True
