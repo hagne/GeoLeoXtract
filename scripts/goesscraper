@@ -147,7 +147,28 @@ def processADP(path2log = None, no_of_cpu = 1):
     return
 
 #### DSR
-def processDSR(path2log = None, no_of_cpu = 1):
+def processDSR(path2log = None, 
+               start='2019-12-06 00:00:00',
+               end='2021-01-01 00:00:00',
+               no_of_cpu = 1):
+    """
+
+    Parameters
+    ----------
+    path2log : TYPE, optional
+        DESCRIPTION. The default is None.
+    start : TYPE, optional
+        DESCRIPTION. The default is '2019-12-06 00:00:00' which is the date DSR became available for GOES 16.
+    end : TYPE, optional
+        DESCRIPTION. The default is '2021-01-01 00:00:00'.
+    no_of_cpu : TYPE, optional
+        DESCRIPTION. The default is 1.
+
+    Returns
+    -------
+    None.
+
+    """
     product = 'DSR'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -155,8 +176,8 @@ def processDSR(path2log = None, no_of_cpu = 1):
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
-                                            start='2021-01-01 00:00:00',
-                                            end='2022-01-01 00:00:00',
+                                            start=start,
+                                            end=end,
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
@@ -237,9 +258,12 @@ def processCTP(path2log = None, no_of_cpu = 1):
     return
 
 if __name__ == '__main__':
+    #### argparsing
     parser = argparse.ArgumentParser()
     parser.add_argument('-n', '--todo', nargs='+', default=[], help = 'list of processes to run. To see option type jibarish here read the error message')
     parser.add_argument('-c', '--cpus', help = 'number of cpus')
+    parser.add_argument('-s', '--start', help = 'start datetime, e.g. "2022-01-01 00:00:00"')
+    parser.add_argument('-e', '--end', help = 'end datetime, e.g. "2022-01-01 00:00:00"')
     # parser.add_argument('-t', '--test', action="store_true", help='will not execute at the end.')
     # parser.add_argument('-c', '--comment', help = 'some comment, e.g. which server this was stared on')
     args = parser.parse_args()
@@ -270,7 +294,7 @@ if __name__ == '__main__':
     
 
     for do in todo:
-        do['target'](path2log = fnlog, no_of_cpu = int(args.cpus))
+        do['target'](path2log = fnlog, no_of_cpu = int(args.cpus), start = args.start, end = args.end)
             
             # (path2log = fnlog)
     # processACM(path2log = fnlog)
