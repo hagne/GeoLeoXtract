@@ -198,7 +198,10 @@ def processDSR(path2log = None,
     return
 
 #### ACHA
-def processACHA(path2log = None, no_of_cpu = 1):
+def processACHA(path2log = None,
+               start='2019-12-03 00:00:00',
+               end='2021-01-01 00:00:00',
+               no_of_cpu = 1):
     product = 'ACHA'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -206,8 +209,8 @@ def processACHA(path2log = None, no_of_cpu = 1):
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
-                                            start='2022-01-01 00:00:00',
-                                            end='2022-06-02 00:00:00',
+                                            start=start,
+                                            end=end,
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
