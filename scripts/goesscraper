@@ -4,6 +4,10 @@
 Created on Fri Apr 29 09:37:56 2022
 
 @author: hagen
+
+Done:
+    DSR
+    
 """
 
 
@@ -14,6 +18,7 @@ import pathlib as pl
 import warnings
 import socket
 import argparse
+
 
 
 warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
@@ -117,7 +122,10 @@ def processACM(path2log = None, no_of_cpu = 1):
     return
 
 #### ADP
-def processADP(path2log = None, no_of_cpu = 1):
+def processADP(path2log = None, 
+               start='2019-12-04 00:00:00',
+               end='2021-01-01 00:00:00',
+               no_of_cpu = 1):
     product = 'ADP'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -125,8 +133,8 @@ def processADP(path2log = None, no_of_cpu = 1):
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
-                                            start='2022-01-01 00:00:00',
-                                            end='2022-06-02 00:00:00',
+                                            start=start,
+                                            end=end,
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
@@ -152,7 +160,6 @@ def processDSR(path2log = None,
                end='2021-01-01 00:00:00',
                no_of_cpu = 1):
     """
-
     Parameters
     ----------
     path2log : TYPE, optional
@@ -231,7 +238,10 @@ def processACHA(path2log = None,
     return
 
 #### CTP
-def processCTP(path2log = None, no_of_cpu = 1):
+def processCTP(path2log = None, 
+               start='2017-05-17 00:00:00',
+               end='2021-01-01 00:00:00',
+               no_of_cpu = 1):
     product = 'CTP'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -239,8 +249,8 @@ def processCTP(path2log = None, no_of_cpu = 1):
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
-                                            start='2022-01-01 00:00:00',
-                                            end='2022-06-02 00:00:00',
+                                            start=start,
+                                            end=end,
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
@@ -260,6 +270,7 @@ def processCTP(path2log = None, no_of_cpu = 1):
     print('done', flush = True)
     return
 
+#### if __name__ == '__main__':
 if __name__ == '__main__':
     #### argparsing
     parser = argparse.ArgumentParser()
@@ -293,7 +304,7 @@ if __name__ == '__main__':
     fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
     if not fnlog.is_file():
         with open(fnlog, 'w') as log_out:
-            log_out.write('datetime,rund_status,error,success,warning,subprocess,server,comment\n')
+            log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
     
 
     for do in todo:
