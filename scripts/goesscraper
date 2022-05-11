@@ -7,6 +7,12 @@ Created on Fri Apr 29 09:37:56 2022
 
 Done:
     DSR
+
+from start to present ... running:
+    COD
+    ACM 
+    ADP
+    CTP
     
 """
 
@@ -25,8 +31,20 @@ warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
 
 stations = surfrad.network.stations
 
+# CPEX spring 2020
+# start='2020-03-01 00:00:00',
+# end='2020-06-01 00:00:00',
+#
+# CPEX original
+# start='2018-08-01 00:00:00',
+# end='2018-11-01 00:00:00',
+
+
 #### COD
-def processCOD(path2log = None, no_of_cpu = 1):
+def processCOD(path2log = None, 
+               start='2017-06-09 00:00:00',
+               end='2023-01-01 00:00:00',
+               no_of_cpu = 1):
     print('start', flush = True)
     product = 'COD'
     # alt_var = 'BCM'# None, if the varialbe name is not equal to product name
@@ -36,23 +54,8 @@ def processCOD(path2log = None, no_of_cpu = 1):
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
-                                            #
-                                            # for testing
-                                            # start='2020-06-01 18:00:00',
-                                            # end='2020-06-01 18:05:00',
-                                            #
-                                            # all times
-                                            start = '2021-01-01 00:00:00',
-                                            end =   '2022-01-01 10:00:00',
-                                            
-                                            # CPEX spring 2020
-                                            # start='2020-03-01 00:00:00',
-                                            # end='2020-06-01 00:00:00',
-                                            #
-                                            # CPEX original
-                                            # start='2018-01-01 00:00:00',
-                                            # start='2018-11-01 13:00:00',
-                                            # end='2018-11-01 14:10:00',
+                                            start = start,
+                                            end =   end,
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_daytime_projected2surfrad',
@@ -78,7 +81,10 @@ def processCOD(path2log = None, no_of_cpu = 1):
     return
     
 #### ACM
-def processACM(path2log = None, no_of_cpu = 1):
+def processACM(path2log = None, 
+               start='2017-04-20 13:00:00',
+               end='2023-01-01 00:00:00',
+               no_of_cpu = 1):
     product = 'ACM'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -86,22 +92,8 @@ def processACM(path2log = None, no_of_cpu = 1):
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
-                                            # start='2020-03-01 18:00:00',
-                                            # end='2020-03-01 18:05:00',
-                                            #
-                                            # CPEX spring 2020
-                                            # start='2020-03-01 00:00:00',
-                                            # end='2020-06-01 00:00:00',
-                                            #
-                                            # CPEX original
-                                            # start='2018-08-01 00:00:00',
-                                            # end='2018-11-01 00:00:00',
-                                            #
-                                            # all time
-                                            # start='2017-04-20 13:00:00',
-                                            # end='2017-04-20 13:05:00',
-                                            start='2022-01-01 00:00:00',
-                                            end='2022-06-02 00:00:00',
+                                            start=start,
+                                            end=end,
                                             process = dict(#concatenate = 'daily',
                                                            function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
                                                            prefix = f'ABI_L2_{product}_projected2surfrad',
