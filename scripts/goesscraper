@@ -9,7 +9,7 @@ Done:
     DSR
 
 from start to present ... running:
-    COD
+    COD (nimbus 2)
     ACM (pulsar 3q)
     ADP (telg)
     CTP
@@ -44,7 +44,8 @@ stations = surfrad.network.stations
 def processCOD(path2log = None, 
                start='2017-06-09 00:00:00',
                end='2023-01-01 00:00:00',
-               no_of_cpu = 1):
+               no_of_cpu = 1,
+               verbose = False):
     print('start', flush = True)
     product = 'COD'
     # alt_var = 'BCM'# None, if the varialbe name is not equal to product name
@@ -61,7 +62,7 @@ def processCOD(path2log = None,
                                                            prefix = f'ABI_L2_{product}_daytime_projected2surfrad',
                                                            path2processed = path2processed),
                                             # keep_files=True
-                                            verbose = True
+                                            verbose = verbose
                                           )
     
     # pl.Path(f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}').mkdir()
@@ -84,7 +85,8 @@ def processCOD(path2log = None,
 def processACM(path2log = None, 
                start='2017-04-20 13:00:00',
                end='2023-01-01 00:00:00',
-               no_of_cpu = 1):
+               no_of_cpu = 1,
+               verbose = False):
     product = 'ACM'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -152,7 +154,8 @@ def processADP(path2log = None,
 def processDSR(path2log = None, 
                start='2019-12-06 00:00:00',
                end='2021-01-01 00:00:00',
-               no_of_cpu = 1):
+               no_of_cpu = 1,
+               verbose = False):
     """
     Parameters
     ----------
@@ -202,7 +205,8 @@ def processDSR(path2log = None,
 def processACHA(path2log = None,
                start='2019-12-03 00:00:00',
                end='2021-01-01 00:00:00',
-               no_of_cpu = 1):
+               no_of_cpu = 1,
+               verbose = False):
     product = 'ACHA'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
@@ -235,7 +239,8 @@ def processACHA(path2log = None,
 def processCTP(path2log = None, 
                start='2017-05-17 00:00:00',
                end='2021-01-01 00:00:00',
-               no_of_cpu = 1):
+               no_of_cpu = 1,
+               verbose = False):
     product = 'CTP'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
