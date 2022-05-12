@@ -1111,6 +1111,9 @@ class Grid2SiteProjection(object):
             variables = list(ds_at_sites.variables)
 
             for var in qf_by_variable:
+                if qf_by_variable[var] == 'ignore':
+                    # variables.pop(variables.index(var))
+                    continue
                 # add DQF assessed variable and set to nans
                 varname = f'{var}_DQF_assessed'
                 dsdqfass= ds_at_sites.DQF.copy()
@@ -1816,7 +1819,8 @@ def projection_function(row, stations):
     # change var names to distinguish from area
     for var in ngsinst.valid_2D_variables:
         point = point.rename({var: f'{var}_on_pixel',})
-        point = point.rename({f'{var}_DQF_assessed': f'{var}_on_pixel_DQF_assessed',})
+        if f'{var}_DQF_assessed' in point.variables:
+            point = point.rename({f'{var}_DQF_assessed': f'{var}_on_pixel_DQF_assessed',})
     point = point.rename({'DQF': 'DQF_on_pixel'})
     
     # merge aerea and point
