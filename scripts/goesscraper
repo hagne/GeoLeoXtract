@@ -46,6 +46,7 @@ def processCOD(path2log = None,
                start='2017-06-09 00:00:00',
                end='2023-01-01 00:00:00',
                no_of_cpu = 1,
+               reverse = False,
                verbose = False):
     print('start', flush = True)
     product = 'COD'
@@ -72,6 +73,8 @@ def processCOD(path2log = None,
     # sys.stdout.flush()
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    if reverse:
+        query.workplan = query.workplan[::-1]
     # sys.stdout.flush()
     query.process_parallel(no_of_cpu = no_of_cpu, 
                            process_function=ngs.projection_function_multi, args={'stations': stations}, 
@@ -123,6 +126,7 @@ def processADP(path2log = None,
                start='2019-12-04 00:00:00',
                end='2021-01-01 00:00:00',
                no_of_cpu = 1,
+               reverse = False,
                verbose = False):
     product = 'ADP'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
@@ -142,6 +146,8 @@ def processADP(path2log = None,
                                           )
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    if reverse:
+        query.workplan = query.workplan[::-1]
     # sys.stdout.flush()
     query.process_parallel(no_of_cpu = no_of_cpu, 
                            process_function=ngs.projection_function_multi, args={'stations': stations}, 
@@ -158,6 +164,7 @@ def processDSR(path2log = None,
                start='2019-12-06 00:00:00',
                end='2021-01-01 00:00:00',
                no_of_cpu = 1,
+               reverse = False,
                verbose = False):
     """
     Parameters
@@ -194,6 +201,8 @@ def processDSR(path2log = None,
                                           )
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    if reverse:
+        query.workplan = query.workplan[::-1]
     # sys.stdout.flush()
     query.process_parallel(no_of_cpu = no_of_cpu, 
                            process_function=ngs.projection_function_multi, args={'stations': stations}, 
@@ -209,6 +218,7 @@ def processACHA(path2log = None,
                start='2019-12-03 00:00:00',
                end='2021-01-01 00:00:00',
                no_of_cpu = 1,
+               reverse = False,
                verbose = False):
     product = 'ACHA'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
@@ -228,6 +238,8 @@ def processACHA(path2log = None,
                                           )
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    if reverse:
+        query.workplan = query.workplan[::-1]
     # sys.stdout.flush()
     query.process_parallel(no_of_cpu = no_of_cpu, 
                            process_function=ngs.projection_function_multi, args={'stations': stations}, 
@@ -263,7 +275,6 @@ def processCTP(path2log = None,
                                           )
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
-    # sys.stdout.flush()
     if reverse:
         query.workplan = query.workplan[::-1]
         
