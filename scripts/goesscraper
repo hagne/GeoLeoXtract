@@ -11,9 +11,9 @@ Done:
 
 from start to present ... running:
     COD (nimbus2, 85662, 2/min/cpu -> 14 days 05/12)
-    ACM (vortex4, 386050, 2/min/cpu -> 70 days 05/12)
+    ACM (vortex4+nimbus3+nimbus4, 386050, 2/min/cpu -> 70 days 05/12)
     ADP (telg, 113568, 1/min/cpu -> 20 days 05/12)
-    CTP (vortex2     05/12)
+    CTP (vortex2 + pulsar3    05/12)
     
 """
 
@@ -87,6 +87,7 @@ def processACM(path2log = None,
                start='2017-04-20 13:00:00',
                end='2023-01-01 00:00:00',
                no_of_cpu = 1,
+               reverse = False,
                verbose = False):
     product = 'ACM'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
@@ -106,7 +107,8 @@ def processACM(path2log = None,
                                           )
     print('make workplan', flush = True)
     print(f'workplan.shape: {query.workplan.shape}', flush = True)
-    # sys.stdout.flush()
+    if reverse:
+        query.workplan = query.workplan[::-1]
     query.process_parallel(no_of_cpu = no_of_cpu, 
                            process_function=ngs.projection_function_multi, args={'stations': stations}, 
                            path2log = path2log, 
