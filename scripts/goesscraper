@@ -10,9 +10,9 @@ Done:
     ACHA
 
 from start to present ... running:
-    COD (nimbus2, 85662, 2/min/cpu -> 14 days 05/12)
+    COD (nimbus2 + tsunami2, 85662, 2/min/cpu -> 14 days 05/12)
     ACM (vortex4+nimbus3+nimbus4, 386050, 2/min/cpu -> 70 days 05/12)
-    ADP (telg, 113568, 1/min/cpu -> 20 days 05/12)
+    ADP (telg+pulsar4, 113568, 1/min/cpu -> 20 days 05/12)
     CTP (vortex2 + pulsar3    05/12)
     
 """
@@ -25,7 +25,8 @@ import pathlib as pl
 import warnings
 import socket
 import argparse
-
+import configparser
+import pandas as pd
 
 
 warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
@@ -287,47 +288,187 @@ def processCTP(path2log = None,
     print('done', flush = True)
     return
 
+#### generic
+def process_generic(product = 'ACM',
+               path2log = None, 
+               start='2017-04-20 13:00:00',
+               end='2023-01-01 00:00:00',
+               path2processed =  '/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/',
+               file_prefix = 'ABI_L2_{product}_projected2surfrad',
+               no_of_cpu = 1,
+               reverse = False,
+               verbose = False,
+               test = False
+               ):
+    # product = 'ACM'
+    path2processed =  path2processed.format(product = product)
+    query = nesdis_aws.nesdis_aws.AwsQuery(
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}/',
+                                            satellite='16',
+                                            product=f'ABI-L2-{product}',
+                                            scan_sector='C',
+                                            start=start,
+                                            end=end,
+                                            process = dict(#concatenate = 'daily',
+                                                           function = lambda row: ngs.projection_function_multi(row), #,, alt_var),
+                                                           prefix = file_prefix.format(product = product),
+                                                           path2processed = path2processed,
+                                                            )
+                                            # keep_files=True
+                                          )
+    print('========', flush = True)
+    print('workplan', flush = True)
+    print('========', flush = True)
+    print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    if reverse:
+        query.workplan = query.workplan[::-1]
+    if test:
+        print(query.workplan, flush = True)
+        return query.workplan
+    
+    query.process_parallel(no_of_cpu = no_of_cpu, 
+                           process_function=ngs.projection_function_multi, args={'stations': stations}, 
+                           path2log = path2log, 
+                           subprocess = product,
+                           server = socket.gethostname(),
+                           comment = '')
+    print('done', flush = True)
+    return
+
 #### if __name__ == '__main__':
 if __name__ == '__main__':
+    #### create log file
+    fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
+    if not fnlog.is_file():
+        with open(fnlog, 'w') as log_out:
+            log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
+            
     #### argparsing
     parser = argparse.ArgumentParser()
+    parser.add_argument('-i', '--init', help = "Path to initiation file. All other arguments will be ignored.")
     parser.add_argument('-n', '--todo', nargs='+', default=[], help = 'list of processes to run. To see option type jibarish here read the error message')
     parser.add_argument('-c', '--cpus', help = 'number of cpus')
     parser.add_argument('-s', '--start', help = 'start datetime, e.g. "2022-01-01 00:00:00"')
     parser.add_argument('-e', '--end', help = 'end datetime, e.g. "2022-01-01 00:00:00"')
     parser.add_argument('-v', '--verbose', help = 'verbose', action='store_true')
     parser.add_argument('-r', '--reverse', help = 'reverse the workplan. Good if one wants to start a second process on the same product. Note, process tests each time if output file exists and will not try to re-process', action='store_true')
-    # parser.add_argument('-t', '--test', action="store_true", help='will not execute at the end.')
+    parser.add_argument('-t', '--test', action="store_true", help='will not execute at the end.')
     # parser.add_argument('-c', '--comment', help = 'some comment, e.g. which server this was stared on')
     args = parser.parse_args()
     print('args:')
     print(args)
     
-    todo_all = [{'name':'COD', 'target':processCOD},
-                {'name':'ACM', 'target':processACM},
-                {'name':'ADP', 'target':processADP},
-                {'name':'DSR', 'target':processDSR},
-                {'name':'ACHA', 'target':processACHA},
-                {'name':'CTP', 'target':processCTP},
-                ]
+    #### initiation file
+    if not isinstance(args.init, type(None)):
+        config = configparser.ConfigParser(allow_no_value=True,)
+        config.read(args.init)
+        if 'range' in config['workplan'].keys():
+            tr = config['workplan']['range'].split()
+            end = pd.Timestamp.now().__str__()
+            start = (pd.Timestamp.now() - pd.to_timedelta(int(tr[1]), 'days')).__str__()
+        elif 'start' in config['workplan'].keys():
+            start = config['workplan']['start']
+            end = config['workplan']['end']
+        cpus = int(config['system']['cpus'])
+        runtype = config['system']['runtype']
+        products = [i.strip() for i in config['products']['products'].split(',')]
+        test = 'testrun' in config['system'].keys()
+        if test:
+            test = config['system']['testrun'].split('#')[0].strip()
+        verbose = 'verbose' in config['system'].keys()
+        reverse = 'reverse' in config['workplan'].keys()
+        path2processed =  config['file_io']['path2processed']
+        file_prefix =  config['file_io']['file_prefix']
+        
+    else: 
+        start = args.start
+        end = args.end
+        cpus = args.cpus
+        products = args.todo
+        test = args.test
+        verbose = args.verbose
+        reverse = args.reverse
+        runtype = 'designated'
+        path2processed =  '/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
+        file_prefix = 'ABI_L2_{product}_projected2surfrad',
+        
+    if verbose:
+        print('========')
+        print('Settings')
+        print('========')
+        print(f'start: {start}')
+        print(f'end: {end}')
+        print(f'cpus: {cpus}')
+        print(f'products: {products}')
+        print(f'test: {test}')
+        print(f'reverse: {reverse}')
+        print(f'runtype: {runtype}')
+        print(f'path2processed: {path2processed}')
+        print(f'file_prefix: {file_prefix}')
+        # print(f'{}')
+        # print(f'{}')
+        print('==============')
     
-    todo = [td for td in todo_all if td['name'] in args.todo]
-    todo_invalid = [td for td in args.todo if td not in [td['name'] for td in todo_all]]
-    assert(len(todo_invalid) == 0), f'The processes {todo_invalid} are no valid options. Choose from:\n{[td["name"] for td in todo_all]}'
-    assert(len(todo) > 0), f'No valid process found. Set -n to at least one of the following options:\n{[td["name"] for td in todo_all]}'
-    assert(len(todo) == len(args.todo)), 'this should not be possible'#f'Number of valid process ({len(todo)}) not equal to number of provided todo list ({len(args.todo)}). Make sure all your choises are in the available list of processes:\n{[td["name"] for td in todo_all]}' 
+    if runtype == 'designated':
+        todo_all = [{'name':'COD', 'target':processCOD},
+                    {'name':'ACM', 'target':processACM},
+                    {'name':'ADP', 'target':processADP},
+                    {'name':'DSR', 'target':processDSR},
+                    {'name':'ACHA', 'target':processACHA},
+                    {'name':'CTP', 'target':processCTP},
+                    ]
+        
+        
+        
+        
+        todo = [td for td in todo_all if td['name'] in products]
+        todo_invalid = [td for td in products if td not in [td['name'] for td in todo_all]]
+        assert(len(todo_invalid) == 0), f'The processes {todo_invalid} are no valid options. Choose from:\n{[td["name"] for td in todo_all]}'
+        assert(len(todo) > 0), f'No valid process found. Set -n to at least one of the following options:\n{[td["name"] for td in todo_all]}'
+        assert(len(todo) == len(products)), 'this should not be possible'#f'Number of valid process ({len(todo)}) not equal to number of provided todo list ({len(args.todo)}). Make sure all your choises are in the available list of processes:\n{[td["name"] for td in todo_all]}' 
+    
+        print(f'process to be persued:\n{[td["name"] for td in todo]}')
+    
+        
+    
 
-    print(f'process to be persued:\n{[td["name"] for td in todo]}')
     
-    #### create log file
-    fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
-    if not fnlog.is_file():
-        with open(fnlog, 'w') as log_out:
-            log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
-    
-
-    for do in todo:
-        do['target'](path2log = fnlog, no_of_cpu = int(args.cpus), start = args.start, end = args.end, verbose = args.verbose, reverse = args.reverse)
+        test = True
+        if test:
+            print('just testing')
+        else:      
+            for do in todo:
+                #### execute designated
+                do['target'](#path2processed = path2processed,
+                             #file_prefix = file_prefix,
+                             path2log = fnlog,
+                             no_of_cpu = int(cpus),
+                             start = start,
+                             end = end,
+                             verbose = verbose, 
+                             reverse = reverse)
             
-            # (path2log = fnlog)
-    # processACM(path2log = fnlog)
+            
+    elif runtype == 'generic':
+        # test = True
+        if 'COD' in products:
+            assert(False), 'did you take care of the output folder?!?!?, its different!!'
+        if test == 'True':
+            print('just testing... generic')
+        # if 1:
+        #     pass
+        else:
+            for product in products:
+                #### execute generic
+                process_generic(product = product,
+                                path2processed = path2processed,
+                                file_prefix = file_prefix,
+                                path2log = fnlog,
+                                no_of_cpu = int(cpus),
+                                start = start,
+                                end = end,
+                                verbose = verbose, 
+                                reverse = reverse,
+                                test = test == 'workplan')
+    else:
+        assert(False), f'runtype "{runtype}" is not a valid option.'
