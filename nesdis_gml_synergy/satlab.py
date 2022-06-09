@@ -63,7 +63,7 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
     # if product_name == 'ABI-L2-AODC-M6':
     #     classinst = ABI_L2_AODC_M6(ds)
     if 'ABI-L2-AODC' in product_name:
-        classinst = ABI_L2_AODC(ds)
+        classinst = ABI_L2_AOD(ds)
     elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
         classinst = ABI_L2_MCMIPC_M6(ds)
     elif product_name[:-4] == 'ABI-L2-LST':
@@ -1384,14 +1384,25 @@ class Grid2SiteProjection(object):
     @property
     def closest_grid_points(self):#, discard_outsid_grid = 2.2):
         if isinstance(self._closest_points, type(None)):
-
+            #### TODO i think the block below showed be handled through a setter for the self.site attribute
             lon_lat_sites = self.sites
+            #### TODO list of dicts needs to be done
+            # print(f'lon_lat_sites type: {type(lon_lat_sites)}')
+            # print(lon_lat_sites)
             if type(lon_lat_sites).__name__ == 'Station':
                 idx = [lon_lat_sites.abb]
                 lon_lat_sites = _np.array([[lon_lat_sites.lon, lon_lat_sites.lat]])
             elif type(lon_lat_sites).__name__ == 'NetworkStations':
                 idx = [s.abb for s in lon_lat_sites]
                 lon_lat_sites =_np.array([[s.lon, s.lat] for s in lon_lat_sites])
+            elif isinstance(lon_lat_sites, type(None)):
+                raise TypeError('It looks like no sites are defined to do the projection on.')
+            elif isinstance(lon_lat_sites, dict):
+                idx = [lon_lat_sites['abb']]
+                lon_lat_sites = _np.array([[lon_lat_sites['lon'], lon_lat_sites['lat']]])
+            elif isinstance(lon_lat_sites, list):
+                idx = [s['abb'] for s in lon_lat_sites]
+                lon_lat_sites = _np.array([[s['lon'], s['lat']] for s in lon_lat_sites])
             else:
                 idx = range(len(lon_lat_sites))
             lon_g, lat_g = self.grid.lonlat
@@ -1667,10 +1678,10 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
             out['bmap'] = bmap
         return out
 
-class ABI_L2_AODC(GeosSatteliteProducts):
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.valid_qf = [0,1]
+# class ABI_L2_AOD(GeosSatteliteProducts):
+#     def __init__(self, *args):
+#         super().__init__(*args)
+#         self.valid_qf = [0,1]
         
 class ABI_L2_LST(GeosSatteliteProducts):
     def __init__(self, *args):
@@ -1692,6 +1703,20 @@ class ABI_L2_LST(GeosSatteliteProducts):
 #######################################
 #### Below use assesment dataset
 #################################  
+
+class ABI_L2_AOD(GeosSatteliteProducts):
+    def __init__(self, *args):
+        super().__init__(*args)
+        # self.valid_qf = [0,1]
+        global_qf = [{'high':   [0], 
+                      'medium': [1],
+                      'low':    [2],
+                      'bad':    [3]}]
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        global_qf= global_qf, 
+                                       )
+
 class ABI_L2_COD(GeosSatteliteProducts):
     def __init__(self, *args, night = False):
         '''Cloud Optical Depth'''
@@ -1851,12 +1876,14 @@ def projection_function(row, stations):
     
     return 
 
-def projection_function_multi(row, stations = None):
-    # if verbose:
-    #     print('.', end = '')
+def projection_function_multi(row, stations = None, verbose = True):
+    if verbose:
+        print('projection_function_multi')
     # return 
-    verbose = True
+
     if row.path2file_local_processed.is_file():
+        if verbose:
+            print(f'file exists... skip {row.path2file_local_processed}')
         return
     if not row.path2file_local.is_file():
         print('^', end = '', flush = True)

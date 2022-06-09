@@ -27,11 +27,13 @@ import socket
 import argparse
 import configparser
 import pandas as pd
+import ast
+import numpy as np
 
 
 warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
 
-stations = surfrad.network.stations
+# stations = surfrad.network.stations
 
 # CPEX spring 2020
 # start='2020-03-01 00:00:00',
@@ -290,21 +292,24 @@ def processCTP(path2log = None,
 
 #### generic
 def process_generic(product = 'ACM',
-               path2log = None, 
-               start='2017-04-20 13:00:00',
-               end='2023-01-01 00:00:00',
-               path2processed =  '/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/',
-               file_prefix = 'ABI_L2_{product}_projected2surfrad',
-               no_of_cpu = 1,
-               reverse = False,
-               verbose = False,
-               test = False
-               ):
+                    stations = {'abb': 'TBL', 'name': 'Table Mountain (CO)', 'lat': 40.12498, 'lon': -105.2368},
+                    satellite = 16,
+                    path2log = None, 
+                    start='2017-04-20 13:00:00',
+                    end='2023-01-01 00:00:00',
+                    path2processed =  '/nfs/stu3data2/Satellite_data/goes/{satellite}/ABI_L2_{product}_projected2surfrad/',
+                    file_prefix = 'ABI_L2_{product}_projected2surfrad',
+                    no_of_cpu = 1,
+                    reverse = False,
+                    verbose = False,
+                    test = False
+                    ):
     # product = 'ACM'
-    path2processed =  path2processed.format(product = product)
+    path2processed =  path2processed.format(product = product, satellite = satellite)
+    assert(pl.Path(path2processed).is_dir()), f"Output path does not exist ... generate it!:\n pl.Path('{path2processed}').mkdir()"
     query = nesdis_aws.nesdis_aws.AwsQuery(
-                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}/',
-                                            satellite='16',
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/{satellite}/ABI_L2_{product}/',
+                                            satellite=satellite,
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
                                             start=start,
@@ -325,6 +330,7 @@ def process_generic(product = 'ACM',
     if test:
         print(query.workplan, flush = True)
         return query.workplan
+    
     
     query.process_parallel(no_of_cpu = no_of_cpu, 
                            process_function=ngs.projection_function_multi, args={'stations': stations}, 
@@ -379,6 +385,27 @@ if __name__ == '__main__':
         reverse = 'reverse' in config['workplan'].keys()
         path2processed =  config['file_io']['path2processed']
         file_prefix =  config['file_io']['file_prefix']
+        sites = None
+        network = None
+        if 'network' in config['locations']:
+            network = config['locations']['network']
+            if network == 'surfrad':
+                stations = surfrad.network.stations
+            
+        requried_keys = ['abb', 'lon', 'lat']
+        sites = []
+        for k in config['locations'].keys():
+            site = ast.literal_eval(f"{{{config['locations'][k]}}}")
+            assert(isinstance(site, dict)), f'We expected site to be of type dict not "{type(site)}"'
+            site['abb'] = k
+            assert(np.all([k in site.keys() for k in requried_keys])), f'Site missing required info. Needed: {requried_keys}. Given: {site.keys()}'
+            sites.append(site)
+        if len(sites) == 0:
+            sites = None
+                
+        assert(np.any([not isinstance(i, type(None)) for i in [sites,network]])), 'Init file does not contain sites or networks'
+        satellite = int(config['products']['satellite'].split('#')[0])
+        
         
     else: 
         start = args.start
@@ -405,6 +432,9 @@ if __name__ == '__main__':
         print(f'runtype: {runtype}')
         print(f'path2processed: {path2processed}')
         print(f'file_prefix: {file_prefix}')
+        print(f'network: {network}')
+        print(f'sites: {sites}')
+        print(f'satellite: {satellite}')
         # print(f'{}')
         # print(f'{}')
         print('==============')
@@ -461,6 +491,8 @@ if __name__ == '__main__':
             for product in products:
                 #### execute generic
                 process_generic(product = product,
+                                stations = sites,
+                                satellite = satellite,
                                 path2processed = path2processed,
                                 file_prefix = file_prefix,
                                 path2log = fnlog,
