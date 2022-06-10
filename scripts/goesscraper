@@ -20,7 +20,6 @@ from start to present ... running:
 
 import nesdis_aws
 import nesdis_gml_synergy.satlab as ngs
-import atmPy.data_archives.NOAA_ESRL_GMD_GRAD.surfrad.surfrad as surfrad
 import pathlib as pl
 import warnings
 import socket
@@ -49,6 +48,7 @@ def processCOD(path2log = None,
                start='2017-06-09 00:00:00',
                end='2023-01-01 00:00:00',
                no_of_cpu = 1,
+               stations = None,
                reverse = False,
                verbose = False):
     print('start', flush = True)
@@ -92,6 +92,7 @@ def processCOD(path2log = None,
 def processACM(path2log = None, 
                start='2017-04-20 13:00:00',
                end='2023-01-01 00:00:00',
+               stations = None,
                no_of_cpu = 1,
                reverse = False,
                verbose = False):
@@ -128,6 +129,7 @@ def processACM(path2log = None,
 def processADP(path2log = None, 
                start='2019-12-04 00:00:00',
                end='2021-01-01 00:00:00',
+               stations = None,
                no_of_cpu = 1,
                reverse = False,
                verbose = False):
@@ -167,6 +169,7 @@ def processDSR(path2log = None,
                start='2019-12-06 00:00:00',
                end='2021-01-01 00:00:00',
                no_of_cpu = 1,
+               stations = None,
                reverse = False,
                verbose = False):
     """
@@ -220,6 +223,7 @@ def processDSR(path2log = None,
 def processACHA(path2log = None,
                start='2019-12-03 00:00:00',
                end='2021-01-01 00:00:00',
+               stations = None,
                no_of_cpu = 1,
                reverse = False,
                verbose = False):
@@ -257,6 +261,7 @@ def processACHA(path2log = None,
 def processCTP(path2log = None, 
                start='2017-05-17 00:00:00',
                end='2021-01-01 00:00:00',
+               stations = None,
                no_of_cpu = 1,
                reverse = False,
                verbose = False):
@@ -389,22 +394,23 @@ if __name__ == '__main__':
         network = None
         if 'network' in config['locations']:
             network = config['locations']['network']
-            if network == 'surfrad':
-                stations = surfrad.network.stations
-            
-        requried_keys = ['abb', 'lon', 'lat']
-        sites = []
-        for k in config['locations'].keys():
-            site = ast.literal_eval(f"{{{config['locations'][k]}}}")
-            assert(isinstance(site, dict)), f'We expected site to be of type dict not "{type(site)}"'
-            site['abb'] = k
-            assert(np.all([k in site.keys() for k in requried_keys])), f'Site missing required info. Needed: {requried_keys}. Given: {site.keys()}'
-            sites.append(site)
-        if len(sites) == 0:
-            sites = None
+            if network == 'surfrad':                
+                import atmPy.data_archives.NOAA_ESRL_GMD_GRAD.surfrad.surfrad as surfrad
+                sites = surfrad.network.stations
+        else: 
+            requried_keys = ['abb', 'lon', 'lat']
+            sites = []
+            for k in config['locations'].keys():
+                site = ast.literal_eval(f"{{{config['locations'][k]}}}")
+                assert(isinstance(site, dict)), f'We expected site to be of type dict not "{type(site)}"'
+                site['abb'] = k
+                assert(np.all([k in site.keys() for k in requried_keys])), f'Site missing required info. Needed: {requried_keys}. Given: {site.keys()}'
+                sites.append(site)
+            if len(sites) == 0:
+                sites = None
                 
         assert(np.any([not isinstance(i, type(None)) for i in [sites,network]])), 'Init file does not contain sites or networks'
-        satellite = int(config['products']['satellite'].split('#')[0])
+        satellites = [int(i) for i in config['products']['satellite'].split('#')[0].split(',')]
         
         
     else: 
@@ -434,7 +440,7 @@ if __name__ == '__main__':
         print(f'file_prefix: {file_prefix}')
         print(f'network: {network}')
         print(f'sites: {sites}')
-        print(f'satellite: {satellite}')
+        print(f'satellites: {satellites}')
         # print(f'{}')
         # print(f'{}')
         print('==============')
@@ -481,26 +487,25 @@ if __name__ == '__main__':
             
     elif runtype == 'generic':
         # test = True
-        if 'COD' in products:
-            assert(False), 'did you take care of the output folder?!?!?, its different!!'
         if test == 'True':
             print('just testing... generic')
         # if 1:
         #     pass
         else:
             for product in products:
-                #### execute generic
-                process_generic(product = product,
-                                stations = sites,
-                                satellite = satellite,
-                                path2processed = path2processed,
-                                file_prefix = file_prefix,
-                                path2log = fnlog,
-                                no_of_cpu = int(cpus),
-                                start = start,
-                                end = end,
-                                verbose = verbose, 
-                                reverse = reverse,
-                                test = test == 'workplan')
+                for satellite in satellites:
+                    #### execute generic
+                    process_generic(product = product,
+                                    stations = sites,
+                                    satellite = satellite,
+                                    path2processed = path2processed,
+                                    file_prefix = file_prefix,
+                                    path2log = fnlog,
+                                    no_of_cpu = int(cpus),
+                                    start = start,
+                                    end = end,
+                                    verbose = verbose, 
+                                    reverse = reverse,
+                                    test = test == 'workplan')
     else:
         assert(False), f'runtype "{runtype}" is not a valid option.'

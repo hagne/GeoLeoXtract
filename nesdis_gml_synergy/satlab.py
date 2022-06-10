@@ -1877,9 +1877,8 @@ def projection_function(row, stations):
     return 
 
 def projection_function_multi(row, stations = None, verbose = True):
-    if verbose:
-        print('projection_function_multi')
-    # return 
+    # if verbose:
+    #     print('projection_function_multi')
 
     if row.path2file_local_processed.is_file():
         if verbose:
