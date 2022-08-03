@@ -56,8 +56,16 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
                     ds = _xr.open_dataset(p2f,decode_times=False,)
                 else:
                     raise
+    
+    if 'dataset_name' in ds.attrs.keys():    
+        product_name = ds.attrs['dataset_name'].split('_')[1]
+    elif 'title'in ds.attrs.keys():    
+        # The experimental Surface radiation budget product did not have data_set attribute
+        product_name = ds.attrs['title']
+    else:
+        assert(False), 'NetCDF file has no attribute named "dataset_name", or "title"'
         
-    product_name = ds.attrs['dataset_name'].split('_')[1]
+    
     if verbose:
         print(f'product name: {product_name}')
     # if product_name == 'ABI-L2-AODC-M6':
@@ -94,6 +102,11 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
         classinst = ABI_L2_DSR(ds)
         if verbose:
             print('identified as: ABI_L2_DSR.')
+    elif product_name == 'ABI L2 Shortwave Radiation Budget (SRB)':
+        classinst = ABI_L2_SRB(ds)
+        if verbose:
+            print('identified as: ABI_L2_DSR.')
+        
     else:
         classinst = GeosSatteliteProducts(ds)
         if verbose:
@@ -770,9 +783,6 @@ class GeosSatteliteProducts(object):
         else:
             ds = _xr.open_dataset(file)
         
-        
-        self.ds = ds
-        
         self.qf_managment = None
 #         self._varname4test = 'CMI_C02'
 
@@ -782,8 +792,12 @@ class GeosSatteliteProducts(object):
         # some file are provide in scan_angle others in lat lon
         if 'x' in ds.coords:
             self.grid_type = 'scan_angle'
-        elif 'lat' in ds.coords:
+        # elif 'lat' in ds.coords:
+        elif 'lat' in [c.lower() for c in ds.coords]:
             self.grid_type = 'lonlat'
+            if 'Lon' in ds.coords:
+                ds = ds.rename({'Lon': 'lon', 'Lat':'lat'})
+        self.ds = ds
 
     @property
     def valid_2D_variables(self):      
@@ -1683,10 +1697,10 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
 #         super().__init__(*args)
 #         self.valid_qf = [0,1]
         
-class ABI_L2_LST(GeosSatteliteProducts):
-    def __init__(self, *args):
-        super().__init__(*args)
-        self.valid_qf = [0,]
+# class ABI_L2_LST(GeosSatteliteProducts):
+#     def __init__(self, *args):
+#         super().__init__(*args)
+#         self.valid_qf = [0,]
         
 # class ABI_L2_ACHA(GeosSatteliteProducts):
 #     def __init__(self, *args):
@@ -1703,6 +1717,18 @@ class ABI_L2_LST(GeosSatteliteProducts):
 #######################################
 #### Below use assesment dataset
 #################################  
+
+class ABI_L2_LST(GeosSatteliteProducts):
+    def __init__(self, *args):
+        super().__init__(*args)
+        global_qf = [{'high':   [0], 
+                      'medium': [8],
+                      # 'low':    [2],
+                      'bad':    [2,4,16,32]}]
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        global_qf= global_qf, 
+                                       )
 
 class ABI_L2_AOD(GeosSatteliteProducts):
     def __init__(self, *args):
@@ -1798,6 +1824,20 @@ class ABI_L2_CTP(GeosSatteliteProducts):
 class ABI_L2_DSR(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Downwelling Shortwave Radiation'''
+        super().__init__(*args)
+        
+        global_qf = [{'high': [0], 'bad': [1,]}]
+        
+        self.qf_managment = QfManagment(self, 
+                                        qf_representation='as_is', 
+                                        # qf_representation='binary', 
+                                        # qf_by_variable = qf_by_variable, 
+                                        global_qf= global_qf, 
+                                        # number_of_bits=8
+                                       )
+class ABI_L2_SRB(GeosSatteliteProducts):
+    def __init__(self, *args):
+        '''Surface radiative budget. This is an experimental product'''
         super().__init__(*args)
         
         global_qf = [{'high': [0], 'bad': [1,]}]
