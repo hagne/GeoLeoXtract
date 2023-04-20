@@ -358,10 +358,17 @@ class Concatonator(object):
             workplan = workplan[ ~ workplan.p2rf_exists].copy()
             
             workplan.sort_values(['datetime'], inplace=True)
-                
+            
+            workplan.index = workplan['datetime']
+            
+            
             self._workplan = workplan
             
         return self._workplan
+    
+    @workplan.setter
+    def workplan(self,value):
+        self._workplan = value
     
     def concat_and_save(self, save = True, test = False, verbose = False):
         """
@@ -385,6 +392,7 @@ class Concatonator(object):
             try:
                 # ds = xr.concat(fc_list, dim = 'datetime')
                 ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
+                ds = ds.assign_coords(datetime = _pd.to_datetime(ds.datetime))  #there was an issue with the format of the time koordinate. This statement can probably be removed at some point (20230420)
             except ValueError as err:
                 errmsg = err.args[0]
                 err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
@@ -413,30 +421,31 @@ class Concatonator(object):
         None.
 
         """
-        if isinstance(self._concatenated, type(None)):
-            concat = []
-            for date,date_group in self.workplan.groupby('date'):
-#                 print(date)
-                # fc_list = []
-#                 for frcst_cycle, fc_group in date_group.groupby('frcst_cycle'):
-# #                     print(frcst_cycle)
-#                     fc_list.append(xr.open_mfdataset(fc_group.path2scraped_files, concat_dim='forecast_hour'))
+        return None
+#         if isinstance(self._concatenated, type(None)):
+#             concat = []
+#             for date,date_group in self.workplan.groupby('date'):
+# #                 print(date)
+#                 # fc_list = []
+# #                 for frcst_cycle, fc_group in date_group.groupby('frcst_cycle'):
+# # #                     print(frcst_cycle)
+# #                     fc_list.append(xr.open_mfdataset(fc_group.path2scraped_files, concat_dim='forecast_hour'))
             
-                try:
-                    # ds = xr.concat(fc_list, dim = 'datetime')
-                    ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
-                except ValueError as err:
-                    errmsg = err.args[0]
-                    err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
-                    raise
+#                 try:
+#                     # ds = xr.concat(fc_list, dim = 'datetime')
+#                     ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
+#                 except ValueError as err:
+#                     errmsg = err.args[0]
+#                     err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
+#                     raise
 
-                fn_out = date_group.path2concat_files.unique()
-                assert(len(fn_out) == 1)
-                concat.append({'dataset': ds, 'fname': fn_out[0]})
-                if self.test:
-                    break
-            self._concatenated = concat
-        return self._concatenated
+#                 fn_out = date_group.path2concat_files.unique()
+#                 assert(len(fn_out) == 1)
+#                 concat.append({'dataset': ds, 'fname': fn_out[0]})
+#                 if self.test:
+#                     break
+#             self._concatenated = concat
+#         return self._concatenated
 #                 ds.to_netcdf(fn_out[0])
         
     def deprecated_save(self):
