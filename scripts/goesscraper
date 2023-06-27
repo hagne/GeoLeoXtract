@@ -369,10 +369,14 @@ if __name__ == '__main__':
     print('args:')
     print(args)
     
-    #### initiation file
+    #### initiation file parsing
+    
     if not isinstance(args.init, type(None)):
         config = configparser.ConfigParser(allow_no_value=True,)
         config.read(args.init)
+        if ('range' in config['workplan'].keys()) and ('start' in config['workplan'].keys()):
+            assert(False), 'Initiation error:  give range OR start and end times.'
+        
         if 'range' in config['workplan'].keys():
             tr = config['workplan']['range'].split()
             end = pd.Timestamp.now().__str__()
@@ -412,6 +416,13 @@ if __name__ == '__main__':
         assert(np.any([not isinstance(i, type(None)) for i in [sites,network]])), 'Init file does not contain sites or networks'
         satellites = [int(i) for i in config['products']['satellite'].split('#')[0].split(',')]
         
+        ### concat
+        concatenate = 'concatenate' in config['concatenate'].keys()
+        if concatenate:
+            print('here')
+            concat_rule = config['concatenate']['concatenate'].strip()
+            print(f'.{concat_rule}.')
+            concat_skip_last = 'skip_last' in  config['concatenate'].keys()
         
     else: 
         start = args.start
@@ -509,3 +520,24 @@ if __name__ == '__main__':
                                     test = test == 'workplan')
     else:
         assert(False), f'runtype "{runtype}" is not a valid option.'
+    
+    #### concatenate
+    #### TODO: parallize!
+    if concatenate:
+        for product in products:
+            for satellite in satellites:
+                path2processed_filled = pl.Path(path2processed.format(satellite = satellite, product = product))
+                path2concat_files = path2processed_filled.parent.joinpath(path2processed_filled.name + '_concat')
+                datetime_format = file_prefix.format(product = product)+'_%Y%m%d_%H%M%S.nc'
+                print(f'.{concat_rule}.')
+                cc = ngs.Concatonator(path2scraped_files=path2processed_filled,
+                                      path2concat_files =path2concat_files,
+                                      datetime_format=datetime_format,
+                                      rule=concat_rule, 
+                                      skip_last_day=concat_skip_last,
+                                      test = False)
+                ds = cc.concat_and_save(
+                    # save = True, 
+                    # test= True, 
+                    # verbose=True,
+                )

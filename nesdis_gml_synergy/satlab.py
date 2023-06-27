@@ -308,7 +308,7 @@ class Concatonator(object):
                        path2concat_files = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/point',
                        datetime_format = 'ABI_L2_ACHA_projected2surfrad_%Y%m%d_%H%M%S.nc',
                        rule = 'daily',
-                       skip_last_day = False,
+                       skip_last_day = True,
                        test = False):
         
         assert(rule == 'daily'), f'Sorry, only rule="daily" works so far... programming required if you want to use "{rule}"'
@@ -389,6 +389,9 @@ class Concatonator(object):
 
         """
         for date,date_group in self.workplan.groupby('date'):
+            #### interrupt if last date to avoid processing incomplete days
+            if date == self.workplan.iloc[-1].date:
+                break
             try:
                 # ds = xr.concat(fc_list, dim = 'datetime')
                 ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
@@ -1861,7 +1864,7 @@ class ABI_L2_SRB(GeosSatteliteProducts):
         
 ############################################
 #### specialized function ... probably of limited usefullness for the average user    
-def projection_function(row, stations):
+def projection_function(row, stations, test = False, verbose = False):
     """
     This function is used for on the fly processing (projection to site) for the nedis_aws package.
     The function allows for projection while downloading and subsequent discarding 
@@ -1885,21 +1888,24 @@ def projection_function(row, stations):
     
     # project to stations
     projection = ngsinst.project_on_sites(stations)
-
+    if test:
+        return projection
     # merge closest gridpoint and area
     point = projection.projection2point.copy()#.sel(site = 'TBL')
     point['DQF'] = point.DQF.astype(int) # for some reason this was float64... because there are some nans in there
     
     # change var names to distinguish from area
+    if verbose:
+        print(f'ngsinst.valid_2D_variables: {ngsinst.valid_2D_variables}')
     for var in ngsinst.valid_2D_variables:
         point = point.rename({var: f'{var}_on_pixel',})
         if f'{var}_DQF_assessed' in point.variables:
             point = point.rename({f'{var}_DQF_assessed': f'{var}_on_pixel_DQF_assessed',})
     point = point.rename({'DQF': 'DQF_on_pixel'})
-    
+    if test:
+        return projection
     # merge aerea and point
     ds = projection.projection2area.merge(point)#.rename({alt_var: f'{alt_var}_on_pixel', 'DQF': 'DQF_on_pixel'}))
-    
     # add a time stamp
     dt = _pd.Series([_pd.to_datetime(ngsinst.ds.attrs['time_coverage_start']), _pd.to_datetime(ngsinst.ds.attrs['time_coverage_end'])]).mean().to_datetime64()
     ds = ds.expand_dims({'datetime': [dt]}, )
@@ -1916,6 +1922,8 @@ def projection_function(row, stations):
     
 
     # save2file
+    if test:
+        return ds
     ds.to_netcdf(row.path2file_local_processed)
     # Memory kept on piling up -> maybe a cleanup will help
     ds.close()
@@ -1935,11 +1943,7 @@ def projection_function_multi(row, stations = None, verbose = True):
         return
     if not row.path2file_local.is_file():
         print('^', end = '', flush = True)
-#             print('downloading')
-        #### download
-        # download_output = 
-        
-        #### TODO memory leak ... i did not notice that the download is done separately here... maybe try out the cach purch only
+        #### download        
         # self.aws.clear_instance_cache()     #-> not helping           
         aws = _s3fs.S3FileSystem(anon=True, skip_instance_cache=True) #- not helping
         print('.', end = '', flush = True)
@@ -1952,7 +1956,6 @@ def projection_function_multi(row, stations = None, verbose = True):
     # return
     raise_exception = True
     try:
-        #### TODO memory leak check if row is the same before and after
         rowold = row.copy()
         projection_function(row, stations)
         if not row.equals(rowold):
