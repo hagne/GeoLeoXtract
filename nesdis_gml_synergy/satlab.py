@@ -18,6 +18,8 @@ import multiprocessing as _mp
 import functools as _functools
 from numba import vectorize, int8, float32
 import s3fs as _s3fs
+import concurrent.futures
+
 
 
 def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False):
@@ -301,7 +303,27 @@ class WorkplanEntry(object):
         if keep_ds:
             self.ds_point = ds
         return
-        
+
+
+def process_date(date_group, date, verbose, save, test):
+    try:
+        ds = _xr.open_mfdataset(date_group.path2scraped_files)
+        ds = ds.assign_coords(datetime=_pd.to_datetime(ds.datetime))
+    except ValueError as err:
+        errmsg = err.args[0]
+        err.args = (f'Problem encountered while processing date {date}: {errmsg}',)
+        raise
+
+    fn_out = date_group.path2concat_files.unique()
+    assert(len(fn_out) == 1), 'not possible ... I think'
+    
+    if verbose:
+        print(f'Saving to {fn_out[0]}.')
+    if save:
+        ds.to_netcdf(fn_out[0])
+    if test:
+        return ds
+    return None        
 
 class Concatonator(object):
     def __init__(self, path2scraped_files = '/mnt/telg/tmp/class_tmp_inter/point',
@@ -309,6 +331,7 @@ class Concatonator(object):
                        datetime_format = 'ABI_L2_ACHA_projected2surfrad_%Y%m%d_%H%M%S.nc',
                        rule = 'daily',
                        skip_last_day = True,
+                       file_prefix = 'concat',
                        test = False):
         
         assert(rule == 'daily'), f'Sorry, only rule="daily" works so far... programming required if you want to use "{rule}"'
@@ -316,6 +339,7 @@ class Concatonator(object):
         self.path2concat_files = _pl.Path(path2concat_files)
         self.skip_last_day = skip_last_day
         self.datetime_format = datetime_format
+        self.file_prefix = file_prefix
         try:
             self.path2concat_files.mkdir(exist_ok=True)
         except:
@@ -351,7 +375,9 @@ class Concatonator(object):
             workplan['product_name'] = workplan.apply(lambda row: row.path2scraped_files.name.split('_')[1], axis = 1)
 
             # output paths
-            workplan['path2concat_files'] = workplan.apply(lambda row: self.path2concat_files.joinpath(f'goes_at_gml_{row.product_name}_{row.date.year:04d}{row.date.month:02d}{row.date.day:02d}.nc'), axis = 1)
+            
+            # workplan['path2concat_files'] = workplan.apply(lambda row: self.path2concat_files.joinpath(f'goes_at_gml_{row.product_name}_{row.date.year:04d}{row.date.month:02d}{row.date.day:02d}.nc'), axis = 1)
+            workplan['path2concat_files'] = workplan.apply(lambda row: self.path2concat_files.joinpath(f'{self.file_prefix}_{row.date.year:04d}{row.date.month:02d}{row.date.day:02d}.nc'), axis = 1)
 
             # remove if output path exists
             workplan['p2rf_exists'] = workplan.apply(lambda row: row.path2concat_files.is_file(), axis = 1)
@@ -370,7 +396,93 @@ class Concatonator(object):
     def workplan(self,value):
         self._workplan = value
     
-    def concat_and_save(self, save = True, test = False, verbose = False):
+    def concat_and_save(self, save = True, test = False, verbose = False, num_cpus=None):
+        """
+        Processes the workplan.
+
+        Parameters
+        ----------
+        save : bool, optional
+            For testing, False will skip the saving; still returns the DataSet. The default is True.
+        test : bool, optional
+            If True only the first line will be processed. The default is False.
+        verbose : bool, optional
+            Some info along the way. The default is False.
+
+        Returns
+        -------
+        The last concatinated xarray.DataSet.
+
+        """
+        # def process_date(date_group):
+        #     try:
+        #         ds = _xr.open_mfdataset(date_group.path2scraped_files)
+        #         ds = ds.assign_coords(datetime=_pd.to_datetime(ds.datetime))
+        #     except ValueError as err:
+        #         errmsg = err.args[0]
+        #         err.args = (f'Problem encountered while processing date {date}: {errmsg}',)
+        #         raise
+        
+        #     fn_out = date_group.path2concat_files.unique()
+        #     assert(len(fn_out) == 1), 'not possible ... I think'
+            
+        #     if verbose:
+        #         print(f'Saving to {fn_out[0]}.')
+        #     if save:
+        #         ds.to_netcdf(fn_out[0])
+        #     if test:
+        #         return ds
+        #     return None
+        
+        with concurrent.futures.ProcessPoolExecutor(max_workers=num_cpus) as executor:
+            futures = []
+            for date, date_group in self.workplan.groupby('date'):
+                if date == self.workplan.iloc[-1].date:
+                    break
+                futures.append(executor.submit(process_date, date_group, date, verbose, save, test))
+                
+                if test:
+                    break
+            
+            # Retrieve results from futures (if test=True)
+            results = [future.result() for future in futures if future.result() is not None]
+            
+        if verbose:
+            print('Done')
+        
+        # Return the last concatenated xarray.DataSet
+        return results[-1] if results else None
+        
+        
+        
+        # for date,date_group in self.workplan.groupby('date'):
+        #     #### interrupt if last date to avoid processing incomplete days
+        #     if date == self.workplan.iloc[-1].date:
+        #         break
+        #     try:
+        #         # ds = xr.concat(fc_list, dim = 'datetime')
+        #         ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
+        #         ds = ds.assign_coords(datetime = _pd.to_datetime(ds.datetime))  #there was an issue with the format of the time koordinate. This statement can probably be removed at some point (20230420)
+        #     except ValueError as err:
+        #         errmsg = err.args[0]
+        #         err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
+        #         raise
+
+        #     fn_out = date_group.path2concat_files.unique()
+        #     assert(len(fn_out) == 1), 'not possible ... I think'
+        #     # concat.append({'dataset': ds, 'fname': fn_out[0]})
+        #     if verbose:
+        #         print(f'Saving to {fn_out[0]}.')
+        #     if save:
+        #         ds.to_netcdf(fn_out[0])  
+        #     if test:
+        #         break
+        # if verbose:
+        #     print('Done')
+        # return ds
+    
+    
+    def deprecated_concat_and_save(self, save = True, test = False, verbose = False):
         """
         Processes the workplan.
 
@@ -414,59 +526,7 @@ class Concatonator(object):
             print('Done')
         return ds
     
-    @property
-    def deprecated_concatenated(self):
-        """
-        This is not a good idea to keep all those files open!
-
-        Returns
-        -------
-        None.
-
-        """
-        return None
-#         if isinstance(self._concatenated, type(None)):
-#             concat = []
-#             for date,date_group in self.workplan.groupby('date'):
-# #                 print(date)
-#                 # fc_list = []
-# #                 for frcst_cycle, fc_group in date_group.groupby('frcst_cycle'):
-# # #                     print(frcst_cycle)
-# #                     fc_list.append(xr.open_mfdataset(fc_group.path2scraped_files, concat_dim='forecast_hour'))
-            
-#                 try:
-#                     # ds = xr.concat(fc_list, dim = 'datetime')
-#                     ds = _xr.open_mfdataset(date_group.path2scraped_files)#, concat_dim='datetime')
-#                 except ValueError as err:
-#                     errmsg = err.args[0]
-#                     err.args = (f'Problem encontered while processing date {date}: {errmsg}',)
-#                     raise
-
-#                 fn_out = date_group.path2concat_files.unique()
-#                 assert(len(fn_out) == 1)
-#                 concat.append({'dataset': ds, 'fname': fn_out[0]})
-#                 if self.test:
-#                     break
-#             self._concatenated = concat
-#         return self._concatenated
-#                 ds.to_netcdf(fn_out[0])
-        
-    def deprecated_save(self):
-        """
-        As above, its just not a good idea to keep all those files open
-        Save concatenated files to path as shown in workplan. Also conducts the concatination if not done yet.
-
-        Returns
-        -------
-        Last concatinated DateSet instance.
-
-        """
-        for daydict in self.concatenated:
-            daydict['dataset'].to_netcdf(daydict['fname'])  
-            if self.test:
-                break
-        return daydict['dataset']
-            
+           
 
 class SatelliteMovie(object):
     def __init__(self, 
