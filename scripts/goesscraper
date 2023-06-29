@@ -311,7 +311,11 @@ def process_generic(product = 'ACM',
                     ):
     # product = 'ACM'
     path2processed =  path2processed.format(product = product, satellite = satellite)
-    assert(pl.Path(path2processed).is_dir()), f"Output path does not exist ... generate it!:\n pl.Path('{path2processed}').mkdir()"
+    if 0:
+        assert(pl.Path(path2processed).is_dir()), f"Output path does not exist ... generate it!:\n pl.Path('{path2processed}').mkdir()"
+    else:
+        pl.Path(path2processed).mkdir(exist_ok = True)
+        
     query = nesdis_aws.nesdis_aws.AwsQuery(
                                             path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/{satellite}/ABI_L2_{product}/',
                                             satellite=satellite,
@@ -348,11 +352,11 @@ def process_generic(product = 'ACM',
 
 #### if __name__ == '__main__':
 if __name__ == '__main__':
-    #### create log file
-    fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
-    if not fnlog.is_file():
-        with open(fnlog, 'w') as log_out:
-            log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
+    # #### create log file
+    # fnlog = pl.Path('/home/grad/htelg/.processlogs/goes_aws_scraper_surfrad.log')
+    # if not fnlog.is_file():
+    #     with open(fnlog, 'w') as log_out:
+    #         log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
             
     #### argparsing
     parser = argparse.ArgumentParser()
@@ -369,6 +373,14 @@ if __name__ == '__main__':
     print('args:')
     print(args)
     
+    
+    #### create log file
+    logfn = f"{args.init.replace('.ini', '')}.log"
+    fnlog = pl.Path(f'/home/grad/htelg/.processlogs/{logfn}')
+    if not fnlog.is_file():
+        with open(fnlog, 'w') as log_out:
+            log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
+            
     #### initiation file parsing
     
     if not isinstance(args.init, type(None)):
