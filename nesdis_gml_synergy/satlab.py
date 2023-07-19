@@ -67,7 +67,6 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
     else:
         assert(False), 'NetCDF file has no attribute named "dataset_name", or "title"'
         
-    
     if verbose:
         print(f'product name: {product_name}')
     # if product_name == 'ABI-L2-AODC-M6':
@@ -855,6 +854,17 @@ class GeosSatteliteProducts(object):
         else:
             ds = _xr.open_dataset(file)
         
+        if 'dataset_name' in ds.attrs.keys(): 
+            long_name = ds.attrs['dataset_name']
+            product_name = long_name.split('_')[1]
+        elif 'title'in ds.attrs.keys():    
+            # The experimental Surface radiation budget product did not have data_set attribute
+            product_name = long_name = ds.attrs['title']
+        self.long_name = long_name
+        tl = ['sensor', 'level', 'name', 'version']
+        self.product_info = {tl[e]:p for e,p in enumerate(product_name.split('-'))}
+        
+        
         self.qf_managment = None
 #         self._varname4test = 'CMI_C02'
 
@@ -1057,7 +1067,11 @@ class GeosSatteliteProducts(object):
         out = _pd.DataFrame({'lon':resx, 'lat': resy})
         return out
     
-    def plot(self, variable, valid_qf = True, bmap = None, **pcolor_kwargs):
+    def plot(self, variable, 
+             # valid_qf = True, 
+             # qf = None,
+             data_quality = None,
+             bmap = None, **pcolor_kwargs):
         """
         Plot on map
 
@@ -1065,8 +1079,8 @@ class GeosSatteliteProducts(object):
         ----------
         variable : str
             which variable to plot.
-        valid_qf : bool, optional
-            If only to plot good quality data (defined by the product subclass). The default is True.
+        data_quality: int or list of int
+            0-high, 1-medium, 2-low, some combinations are possible in form of a list.
         bmap : TYPE, optional
             DESCRIPTION. The default is None.
         **pcolor_kwargs : TYPE
@@ -1095,11 +1109,32 @@ class GeosSatteliteProducts(object):
             bmap.drawstates()
             
         ### select valid quality flags given by particular product ... if defined
-        ds = self.ds
-        if valid_qf:
-            if not isinstance(self.valid_qf, type(None)): 
-                ds = ds.where(ds.DQF.isin(self.valid_qf))
+        if isinstance(data_quality, list):
+            data_quality.sort()
+            if len(data_quality) == 1:
+                data_quality = data_quality[0]
             
+        
+        if isinstance(data_quality, type(None)):
+            ds = self.ds
+        elif data_quality == 0:
+            ds = self.data_by_quality_high
+        elif data_quality == [0,1]:
+            ds = self.data_by_quality_high_medium
+        elif data_quality == [0,1,2]:
+            ds = self.data_by_quality_high_medium_low
+        elif data_quality == 1:
+            ds = self.data_by_quality_medium
+        elif data_quality == [1,2]:
+            ds = self.data_by_quality_high_medium_low
+        else:
+            assert(False), f'{data_quality} not an option for data_quality. Choose one or a combination of [0,1,2]'
+        # if valid_qf:
+            
+            # if not isinstance(self.valid_qf, type(None)): 
+            #     ds = ds.where(ds.DQF.isin(self.valid_qf))
+        # if not isinstance(qf, type(None)) :
+        #     ds = ds.where(ds.DQF == qf)
         pc = bmap.pcolormesh(lons, lats, ds[variable], latlon=True, **pcolor_kwargs)
         f = _plt.gcf()
         cb = f.colorbar(pc)
@@ -1316,7 +1351,10 @@ class Grid2SiteProjection(object):
             wheres = self.distance_grids < radius
         
             ds_sel = ds.where(wheres)
-        
+            
+            if radius == 10:
+                print('found it')
+                self.tp_ds_sel = ds_sel.copy()
             # median
             # dst = ds_sel.median(dim = ['x', 'y'])
             dst = ds_sel.median(dim = [coord1, coord2])
@@ -1789,47 +1827,84 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
 #######################################
 #### Below use assesment dataset
 #################################  
+class GoesExceptionVerionNotRecognized(Exception):
+    def __init__(self,si, message = None):
+        txt = f"The version of this product ({si.product_info['version']}) has not been tested and might return false results.\nfullname: {si.product_name}"
+        if not isinstance(message, type(None)):
+            txt +='\n'+message
+        super().__init__(txt)
 
 class ABI_L2_LST(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
-        global_qf = [{'high':   [0], 
-                      'medium': [8],
-                      # 'low':    [2],
-                      'bad':    [2,4,16,32]}]
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        global_qf= global_qf, 
-                                       )
-
+        
+        #quality flags changed at some point
+        
+        if self.product_info['version'] in ['M3',]:
+            print('bubasd')
+            global_qf = [{'high':   [0], 
+                          'medium': [8],
+                          # 'low':    [2],
+                          'bad':    [2,4,16,32]}]
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+        elif self.product_info['version'] in ['M6',]:
+            global_qf = [{'high':   [0], 
+                          'medium': [1],
+                           'low':   [2],
+                          'bad':    [3]}]
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+        else:
+            if 'PQI' in self.ds.variables:
+                message = 'PQI in variables -> qf probably similar to M6'
+            else:
+                message = 'PQI in variables -> qf probably similar to M3'
+            raise GoesExceptionVerionNotRecognized(self, message)
+            
+            
 class ABI_L2_AOD(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
         # self.valid_qf = [0,1]
-        global_qf = [{'high':   [0], 
-                      'medium': [1],
-                      'low':    [2],
-                      'bad':    [3]}]
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        global_qf= global_qf, 
-                                       )
+        
+        if self.product_info['version'] in ['bla',]:
+            
+            global_qf = [{'high':   [0], 
+                          'medium': [1],
+                          'low':    [2],
+                          'bad':    [3]}]
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
 
 class ABI_L2_COD(GeosSatteliteProducts):
     def __init__(self, *args, night = False):
         '''Cloud Optical Depth'''
         super().__init__(*args)
         # self.valid_qf = [0,]  
-        if night:
-            qf0bad = 0
+        
+        if self.product_info['version'] in ['bla',]:
+            if night:
+                qf0bad = 0
+            else:
+                qf0bad = 1 
+            global_qf = [{'bad':   {'bins': [0], 'values': [qf0bad,]}}, 
+                         {'high':   {'bins': [1,2,3,4], 'values': [0]}},  
+                         {'medium': {'bins': [1,2,3,4], 'values': [1,2,5,8]}},
+                         {'bad': {'bins': [1,2,3,4], 'values': [3,4,6,7]}},
+                        ]
+            self.qf_managment = QfManagment(self, qf_representation='binary', global_qf=global_qf, number_of_bits=5)
+            
         else:
-            qf0bad = 1 
-        global_qf = [{'bad':   {'bins': [0], 'values': [qf0bad,]}}, 
-                     {'high':   {'bins': [1,2,3,4], 'values': [0]}},  
-                     {'medium': {'bins': [1,2,3,4], 'values': [1,2,5,8]}},
-                     {'bad': {'bins': [1,2,3,4], 'values': [3,4,6,7]}},
-                    ]
-        self.qf_managment = QfManagment(self, qf_representation='binary', global_qf=global_qf, number_of_bits=5)
+            raise GoesExceptionVerionNotRecognized(self)
 
 class ABI_L2_ACM(GeosSatteliteProducts):
     def __init__(self, *args):
@@ -1841,32 +1916,41 @@ class ABI_L2_ACM(GeosSatteliteProducts):
         # self.qf_low = None
         # self.qf_bad = [1,3]
         
-        global_qf = [{'high':   [0], 
-                      'medium': [2,4,5,6],
-                      'bad':    [1,3]}]
-        
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        global_qf= global_qf, 
-                                       )
+        if self.product_info['version'] in ['bla',]:
+            global_qf = [{'high':   [0], 
+                          'medium': [2,4,5,6],
+                          'bad':    [1,3]}]
+            
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+            
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
         
 class ABI_L2_ADP(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Clear Sky Mask'''
         super().__init__(*args)
         # self.qf_representation = 'binary'
-        qf_by_variable =  {'Aerosol': 'ignore',
-                           'Smoke': {"bad":    {'bins': [0,],  'values':[1,]},
-                                     "low" :   {'bins': [2,3], 'values':[0,]},
-                                     "medium": {'bins': [2,3], 'values':[1,]},
-                                     "high":   {'bins': [2,3], 'values':[3,]},},
-                            'Dust': {"bad":    {'bins': [1,],  'values':[1,]},
-                                     "low" :   {'bins': [4,5], 'values':[0,]},
-                                     "medium": {'bins': [4,5], 'values':[1,]},
-                                     "high":   {'bins': [4,5], 'values':[3,]},}}
         
-        global_qf = [{'bad': {'bins': [6], 'values': [1]}}, {'bad': {'bins': [7], 'values': [1]}}]
-        self.qf_managment = QfManagment(self, qf_representation='binary', qf_by_variable = qf_by_variable, global_qf= global_qf, number_of_bits=8)
+        if self.product_info['version'] in ['bla',]:
+            qf_by_variable =  {'Aerosol': 'ignore',
+                               'Smoke': {"bad":    {'bins': [0,],  'values':[1,]},
+                                         "low" :   {'bins': [2,3], 'values':[0,]},
+                                         "medium": {'bins': [2,3], 'values':[1,]},
+                                         "high":   {'bins': [2,3], 'values':[3,]},},
+                                'Dust': {"bad":    {'bins': [1,],  'values':[1,]},
+                                         "low" :   {'bins': [4,5], 'values':[0,]},
+                                         "medium": {'bins': [4,5], 'values':[1,]},
+                                         "high":   {'bins': [4,5], 'values':[3,]},}}
+            
+            global_qf = [{'bad': {'bins': [6], 'values': [1]}}, {'bad': {'bins': [7], 'values': [1]}}]
+            self.qf_managment = QfManagment(self, qf_representation='binary', qf_by_variable = qf_by_variable, global_qf= global_qf, number_of_bits=8)
+            
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
         
         
         
@@ -1875,52 +1959,71 @@ class ABI_L2_ACHA(GeosSatteliteProducts):
         '''Cloud Top Height'''
         super().__init__(*args)
         
-        global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
-        
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        global_qf= global_qf, 
-                                       )
+        if self.product_info['version'] in ['bla',]:
+            global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
+            
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+            
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
         
 class ABI_L2_CTP(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Cloud Top Pressure'''
         super().__init__(*args)
         
-        global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
-        
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        global_qf= global_qf, 
-                                       )
+        if self.product_info['version'] in ['bla',]:
+            global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
+            
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+            
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
+            
+            
 class ABI_L2_DSR(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Downwelling Shortwave Radiation'''
         super().__init__(*args)
         
-        global_qf = [{'high': [0], 'bad': [1,]}]
-        
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        # qf_representation='binary', 
-                                        # qf_by_variable = qf_by_variable, 
-                                        global_qf= global_qf, 
-                                        # number_of_bits=8
-                                       )
+        if self.product_info['version'] in ['bla',]:
+            global_qf = [{'high': [0], 'bad': [1,]}]
+            
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            # qf_representation='binary', 
+                                            # qf_by_variable = qf_by_variable, 
+                                            global_qf= global_qf, 
+                                            # number_of_bits=8
+                                           )
+            
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
+            
 class ABI_L2_SRB(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Surface radiative budget. This is an experimental product'''
         super().__init__(*args)
         
-        global_qf = [{'high': [0], 'bad': [1,]}]
-        
-        self.qf_managment = QfManagment(self, 
-                                        qf_representation='as_is', 
-                                        # qf_representation='binary', 
-                                        # qf_by_variable = qf_by_variable, 
-                                        global_qf= global_qf, 
-                                        # number_of_bits=8
-                                       )
+        if self.product_info['version'] in ['bla',]:
+            global_qf = [{'high': [0], 'bad': [1,]}]
+            
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            # qf_representation='binary', 
+                                            # qf_by_variable = qf_by_variable, 
+                                            global_qf= global_qf, 
+                                            # number_of_bits=8
+                                           )
+            
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
         
 ############################################
 #### specialized function ... probably of limited usefullness for the average user    
