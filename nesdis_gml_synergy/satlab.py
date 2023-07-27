@@ -22,7 +22,7 @@ import concurrent.futures
 
 
 
-def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False):
+def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, extent = None ,verbose = False):
     """
     Open a satellite data file. Probably only works for GOES
 
@@ -71,6 +71,10 @@ def open_file(p2f, bypass_time_unit_error = True, extent = None ,verbose = False
         print(f'product name: {product_name}')
     # if product_name == 'ABI-L2-AODC-M6':
     #     classinst = ABI_L2_AODC_M6(ds)
+    if not auto_assign_product:
+        classinst = GeosSatteliteProducts(ds)
+        return classinst
+    
     if 'ABI-L2-AODC' in product_name:
         classinst = ABI_L2_AOD(ds)
     elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
@@ -848,7 +852,7 @@ class SatelliteMovie(object):
 
 
 class GeosSatteliteProducts(object):
-    def __init__(self,file):
+    def __init__(self,file, verbose = False):
         if type(file) == _xr.core.dataset.Dataset:
             ds = file
         else:
@@ -1126,7 +1130,9 @@ class GeosSatteliteProducts(object):
         elif data_quality == 1:
             ds = self.data_by_quality_medium
         elif data_quality == [1,2]:
-            ds = self.data_by_quality_high_medium_low
+            ds = self.data_by_quality_medium_low
+        elif data_quality == 2:
+            ds = self.data_by_quality_low
         else:
             assert(False), f'{data_quality} not an option for data_quality. Choose one or a combination of [0,1,2]'
         # if valid_qf:
@@ -1829,7 +1835,7 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
 #################################  
 class GoesExceptionVerionNotRecognized(Exception):
     def __init__(self,si, message = None):
-        txt = f"The version of this product ({si.product_info['version']}) has not been tested and might return false results.\nfullname: {si.product_name}"
+        txt = f"The version of this product ({si.product_info['version']}) has not been tested and might return false results."#"\nfullname: {si.product_name}"
         if not isinstance(message, type(None)):
             txt +='\n'+message
         super().__init__(txt)
@@ -1872,12 +1878,20 @@ class ABI_L2_AOD(GeosSatteliteProducts):
         super().__init__(*args)
         # self.valid_qf = [0,1]
         
-        if self.product_info['version'] in ['bla',]:
+        if self.product_info['version'] in ['M6',]:
             
             global_qf = [{'high':   [0], 
                           'medium': [1],
                           'low':    [2],
                           'bad':    [3]}]
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+        elif self.product_info['version'] in ['M3',]:
+            global_qf = [{'high':   [0], 
+                          'low': [1],
+                          }]
             self.qf_managment = QfManagment(self, 
                                             qf_representation='as_is', 
                                             global_qf= global_qf, 
