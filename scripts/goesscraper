@@ -18,7 +18,7 @@ from start to present ... running:
 """
 
 
-import nesdis_aws
+import nesdis_gml_synergy.cloud_interface as ngsci
 import nesdis_gml_synergy.satlab as ngs
 import pathlib as pl
 import warnings
@@ -316,7 +316,7 @@ def process_generic(product = 'ACM',
     else:
         pl.Path(path2processed).mkdir(exist_ok = True)
         
-    query = nesdis_aws.nesdis_aws.AwsQuery(
+    query = ngsci.AwsQuery(
                                             path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/{satellite}/ABI_L2_{product}/',
                                             satellite=satellite,
                                             product=f'ABI-L2-{product}',

@@ -19,7 +19,7 @@ import functools as _functools
 from numba import vectorize, int8, float32
 import s3fs as _s3fs
 import concurrent.futures
-
+import nesdis_gml_synergy.info as ngsinf
 
 
 def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, extent = None ,verbose = False):
@@ -49,7 +49,17 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
         ds = p2f
     else:
         try:
-            ds = _xr.open_dataset(p2f)
+            if isinstance(p2f, list):
+                dslist = []
+                for fn in p2f:
+                    # currently this is only used for leo products, will probably cause errors when trying to use for something else
+                    dst = _xr.open_dataset(fn)
+                    dst = dst.where(~dst.Latitude.isnull(), drop = True)
+                    dst = dst.where(~dst.Longitude.isnull(), drop = True)
+                    dslist.append(dst)
+                ds = _xr.concat(dslist, dim = 'Rows')
+            else:      
+                ds = _xr.open_dataset(p2f)
         except ValueError as err:
             if not bypass_time_unit_error:
                 raise
@@ -61,11 +71,14 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
     
     if 'dataset_name' in ds.attrs.keys():    
         product_name = ds.attrs['dataset_name'].split('_')[1]
-    elif 'title'in ds.attrs.keys():    
-        # The experimental Surface radiation budget product did not have data_set attribute
+    elif 'title'in [k.lower() for k in ds.attrs.keys()]:   
+        if 'Title' in ds.attrs.keys():
+            ds.attrs['title'] = ds.attrs.pop('Title')
+        # e.g the experimental Surface radiation budget product and NOAA20 products did not have data_set attribute
         product_name = ds.attrs['title']
     else:
         assert(False), 'NetCDF file has no attribute named "dataset_name", or "title"'
+            
         
     if verbose:
         print(f'product name: {product_name}')
@@ -74,8 +87,18 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
     if not auto_assign_product:
         classinst = GeosSatteliteProducts(ds)
         return classinst
-    
-    if 'ABI-L2-AODC' in product_name:
+
+    #### VIRRS products
+    if 'AEROSOL_AOD_EN' in product_name:
+        pv = _np.unique([float(p.name.split('_')[1][slice(1,4,2)])/10 for p in p2f])
+        assert(len(pv) == 1), f'version of files is different ({pv})'
+        pv = pv[0]
+        if verbose:
+            print(f'Found AEROSOL_AOD_EN version {pv}')
+        classinst = JRR_AOD(ds, product_version = pv)
+
+    #### ABI products    
+    elif 'ABI-L2-AODC' in product_name:
         classinst = ABI_L2_AOD(ds)
     elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
         classinst = ABI_L2_MCMIPC_M6(ds)
@@ -134,6 +157,33 @@ class ProjectionProject(object):
                   path2interfld = '/mnt/telg/tmp/class_tmp_inter', 
                   path2resultfld = '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/',
                   generate_missing_folders = False):
+        """
+        Not clear where this is still used???
+
+        Parameters
+        ----------
+        sites : TYPE
+            DESCRIPTION.
+        # list_of_files : TYPE, optional
+            DESCRIPTION. The default is None.
+        # download_files : TYPE, optional
+            DESCRIPTION. The default is False.
+        # file_processing_state : TYPE, optional
+            DESCRIPTION. The default is 'raw'.
+        path2folder_raw : TYPE, optional
+            DESCRIPTION. The default is '/mnt/telg/data/smoke_events/20200912_18_CO/goes_raw/ABI_L2_AODC_M6_G16/'.
+        path2interfld : TYPE, optional
+            DESCRIPTION. The default is '/mnt/telg/tmp/class_tmp_inter'.
+        path2resultfld : TYPE, optional
+            DESCRIPTION. The default is '/mnt/telg/data/smoke_events/20200912_18_CO/goes_projected/ABI_L2_AODC_M6_G16/'.
+        generate_missing_folders : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
         self.sites = sites
         self.list_of_files = None
         self.download_files = False
@@ -569,8 +619,11 @@ class SatelliteMovie(object):
                     lat_0               = 40.12498,
                     lon_0               = -99.2368,
                     costlines           = True,
-                    row                 = 10,
+                    mapscale            = True,
+                    row                 = 0,
                     sites               = None,
+                    gamma               = 2.3,
+                    contrast            = 200,
                     first               = True,
                     save                = True,
                     dpi                 = 300,
@@ -590,6 +643,10 @@ class SatelliteMovie(object):
             sites      = self._a_sites     
             dpi        = self._a_dpi     
             costlines  = self._a_costlines
+            mapscale = self._a_mapscale
+            gamma = self._a_gamma
+            contrast = self._a_contrast
+
         else:
             self._a_resolution = resolution
             self._a_width      = width     
@@ -599,6 +656,10 @@ class SatelliteMovie(object):
             self._a_sites      = sites     
             self._a_dpi        = dpi 
             self._a_costlines  = costlines
+            self._a_mapscale  = mapscale
+            self._a_gamma = gamma
+            self._a_contrast = contrast
+            
             
         mcmip = open_file(row.path2sat)
         timestamp = _pd.to_datetime(mcmip.ds.attrs['time_coverage_start'])
@@ -631,8 +692,12 @@ class SatelliteMovie(object):
             self._txt_active.remove()
             self._pc_active.remove()
             
+        mcmip.generate_rgb(gamma = gamma,
+                            contrast = contrast,
+                           )
         out = mcmip.plot_true_color(bmap = bmap, 
-                              contrast = 200, gamma=2.3,zorder = 0,
+                              # contrast = 200, gamma=2.3,
+                              zorder = 0,
                              )
         if out == False:
             self._pc_active = txt = a.text(0,0,'', transform=a.transAxes, zorder = 10,
@@ -650,12 +715,30 @@ class SatelliteMovie(object):
         
         f = _plt.gcf()
         f.patch.set_alpha(0)
+        
+        #### mapscale
+        if mapscale:
+            sfrac = 3
+            rel_x = 0.7  # 10% from the left
+            rel_y = 0.1  # 10% from the bottom
+            
+            lon = bmap.llcrnrlon + rel_x * (bmap.urcrnrlon - bmap.llcrnrlon)
+            lat = bmap.llcrnrlat + rel_y * (bmap.urcrnrlat - bmap.llcrnrlat)
+            
+            sw = int(width/sfrac/100000) * 100
+            bmap.drawmapscale(lon, lat, lon, lat, sw, barstyle='fancy', units='km', 
+                              # fontsize=9, 
+                              # yoffset=20000,
+                             )
+        
         if save:
             if row.path2fig.is_file():
                 if not overwrite:
                     print(f'file exists, saving skipped! ({row.path2fig})')
                     return
             f.savefig(row.path2fig, dpi = dpi, bbox_inches = 'tight')
+            
+        return bmap
         
     def create_images(self, overwrite = False, use_active_settings = True, verbose = False):
         first = True
@@ -667,7 +750,7 @@ class SatelliteMovie(object):
         for e,(idx, row) in enumerate(workplan.iterrows()):
             if verbose:
                 print(row.path2sat)
-            self.plot_single(row = row, first = first, overwrite = False, use_active_settings = use_active_settings)
+            self.plot_single(row = row, first = first, overwrite = overwrite, use_active_settings = use_active_settings)
             first = False
 #             if e == 2:
 #                 break
@@ -852,21 +935,51 @@ class SatelliteMovie(object):
 
 
 class GeosSatteliteProducts(object):
-    def __init__(self,file, verbose = False):
+    def __init__(self,file, product_version = None, verbose = False):
+        """
+        
+
+        Parameters
+        ----------
+        file : TYPE
+            DESCRIPTION.
+        product_version : TYPE, optional
+            In some cases (an error will tell you when) the product version is not readily available!. The default is None.
+        verbose : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
         if type(file) == _xr.core.dataset.Dataset:
             ds = file
         else:
+            assert(False), 'DEPRECATED! Use open_file!'
             ds = _xr.open_dataset(file)
-        
+        # different products give different identifies. Also the case varies, thats why some code looks convoluted
         if 'dataset_name' in ds.attrs.keys(): 
             long_name = ds.attrs['dataset_name']
             product_name = long_name.split('_')[1]
-        elif 'title'in ds.attrs.keys():    
-            # The experimental Surface radiation budget product did not have data_set attribute
-            product_name = long_name = ds.attrs['title']
+        elif 'title'in [k.lower() for k in ds.attrs.keys()]:    
+            product_name = long_name = ds.attrs[list(ds.attrs.keys())[[k.lower() for k in ds.attrs.keys()].index('title')]]
+        else:
+            assert(False), f'neither dataset_name nor title in attr keys. Options are: {ds.attrs.keys()}'
         self.long_name = long_name
-        tl = ['sensor', 'level', 'name', 'version']
-        self.product_info = {tl[e]:p for e,p in enumerate(product_name.split('-'))}
+        if long_name in ngsinf.VIIRS_product_info.keys():
+        # orpit_type =  
+            prin = {}
+            prin['sensor'] = 'VIIRS'
+            if type(file) == _xr.core.dataset.Dataset:
+                if isinstance(product_version, type(None)):
+                    assert(False), 'Product version is given only in file name, which was not known to when dataset is passed. Pass value to product_version kwarg. In some cases this error can be bypassed by giving a -1.'
+                else:
+                    prin['version'] = product_version
+            self.product_info = prin
+        else:
+            tl = ['sensor', 'level', 'name', 'version']
+            self.product_info = {tl[e]:p for e,p in enumerate(product_name.split('-'))}
         
         
         self.qf_managment = None
@@ -875,19 +988,42 @@ class GeosSatteliteProducts(object):
         # self.valid_qf = None
         self._lonlat = None
         
+        # accomodate inconsistancies in the coordinate names
+        if 'Latitude' in ds.coords:
+            ds = ds.rename({'Latitude': 'lat'})
+        if 'Longitude' in ds.coords:
+            ds = ds.rename({'Longitude': 'lon'})
+        if 'Lon' in ds.coords:
+            ds = ds.rename({'Lon': 'lon'})
+        if 'Lat' in ds.coords:
+            ds = ds.rename({'Lat': 'lat'})
+        
+        if 'QCAll' in ds.variables:
+            # qcvar = [v for v in self.ds.variables if v in ['DQF', 'QCAll']]
+            # assert(len(qcvar) == 1), f'something wrong with the qc flag name! found {qcvar}'
+            ds = ds.rename({'QCAll': 'DQF'})
+        
+        # same for dims
+        if 'Rows' in ds.dims:
+            ds = ds.rename({'Rows':'y', 'Columns':'x'})
+        
         # some file are provide in scan_angle others in lat lon
         if 'x' in ds.coords:
             self.grid_type = 'scan_angle'
         # elif 'lat' in ds.coords:
-        elif 'lat' in [c.lower() for c in ds.coords]:
-            self.grid_type = 'lonlat'
-            if 'Lon' in ds.coords:
-                ds = ds.rename({'Lon': 'lon', 'Lat':'lat'})
+        elif 'lat' in ds.coords:
+            if len(ds.lat.shape) == 1: 
+                self.grid_type = 'lonlat'
+            elif len(ds.lat.shape) == 2:
+                self.grid_type = 'lonlatmesh' # here the conversion from scan_angle to lat lon has been done by the 
+        else:
+            assert(False), f'It looks like there are no adequate coordinates (x,y or lon, lat) available. What is provided: {list(ds.coords)}'
+        
         self.ds = ds
 
     @property
     def valid_2D_variables(self):      
-        if self.grid_type == 'scan_angle':
+        if self.grid_type in ['scan_angle', 'lonlatmesh']:
             var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('y', 'x')]
             var_sel = [var for var in var_sel if not 'DQF' in var]
             # lat and lon might be present if lonlat was executed prior to this ... remove it
@@ -899,7 +1035,7 @@ class GeosSatteliteProducts(object):
             var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('lat', 'lon')]
             var_sel = [var for var in var_sel if not 'DQF' in var]
         else:
-            assert(False)
+            assert(False), 'moep'
         return var_sel #list(ds.variables)
 
     @property
@@ -942,20 +1078,27 @@ class GeosSatteliteProducts(object):
             valid_qf = []
             for qual in quality:
                 valid_qf += self.qf_managment.qf_by_variable[var][qual]
+            
+            # global qc variable names vary, I hope this helps
+            # qcvar = [v for v in self.ds.variables if v in ['DQF', 'QCAll']]
+            # assert(len(qcvar) == 1), f'something wrong with the qc flag name! found {qcvar}'
+            # qcvar = qcvar[0]
+            
             ds[var] = self.ds[var].where(self.ds.DQF.isin(valid_qf))
         
         #### cleanup the  coordinates
         coords2del = list(ds.coords)
-        if self.grid_type == 'scan_angle':
+        if self.grid_type in ['scan_angle',]:
             coords2del.remove('x')
             coords2del.remove('y')
-        elif self.grid_type == 'lonlat':
+        elif self.grid_type in ['lonlat', 'lonlatmesh']:
             coords2del.remove('lat')
             coords2del.remove('lon')
         else:
-            assert(False), 'New product attempt?!?'
-            
-        coords2del.remove('t')
+            assert(False), f'New product attempt?!? grid_type:{self.grid_type}'
+        
+        if 't' in self.ds.coords:
+            coords2del.remove('t')
         ds = ds.drop_vars(coords2del)
         return ds
         
@@ -1017,13 +1160,15 @@ class GeosSatteliteProducts(object):
     #                                     lats = lats)
                 self.ds['lon'] = _xr.DataArray(lons, dims = ['y', 'x']).astype(_np.float32)
                 self.ds['lat'] = _xr.DataArray(lats, dims = ['y', 'x']).astype(_np.float32)
-                
+            
+            elif self.grid_type == 'lonlatmesh':
+                self._lonlat = (self.ds.lon.values, self.ds.lat.values)
             # The lat lon ... at least in the case I had (DSR), only gave one dimentional lat lon -> meshgrid    
             elif self.grid_type == 'lonlat':
                 self._lonlat = _np.meshgrid(self.ds.lon.values, self.ds.lat.values)
                 # assert(False), 'noet'
             else:
-                assert(False), 'noet'
+                assert(False), f'noet, gridtype {self.grid_type} unkown'
         return self._lonlat
     
     def project_on_sites(self, sites):
@@ -1075,7 +1220,7 @@ class GeosSatteliteProducts(object):
              # valid_qf = True, 
              # qf = None,
              data_quality = None,
-             bmap = None, **pcolor_kwargs):
+             bmap = None, colorbar = True, **pcolor_kwargs):
         """
         Plot on map
 
@@ -1142,9 +1287,12 @@ class GeosSatteliteProducts(object):
         # if not isinstance(qf, type(None)) :
         #     ds = ds.where(ds.DQF == qf)
         pc = bmap.pcolormesh(lons, lats, ds[variable], latlon=True, **pcolor_kwargs)
-        f = _plt.gcf()
-        cb = f.colorbar(pc)
-        cb.set_label(ds[variable].long_name)
+        if colorbar:
+            f = _plt.gcf()
+            cb = f.colorbar(pc)
+            cb.set_label(ds[variable].long_name)
+        else:
+            cb = None
         return bmap,pc,cb
 
 # I don't see much improvement with numba!
@@ -1188,9 +1336,9 @@ class Grid2SiteProjection(object):
     @property
     def projection2point(self):
         if isinstance(self._projection2poin, type(None)):
-            if self.grid.grid_type == 'scan_angle':
+            if self.grid.grid_type in  ['scan_angle', 'lonlatmesh']:
                 coord1, coord2 = 'x', 'y'
-            elif self.grid.grid_type == 'lonlat':
+            elif self.grid.grid_type in  ['lonlat', ]:
                 coord1, coord2 = 'lon', 'lat'
             # select relevant variablese ... those with x and y
             # var_sel = [var for var in self.grid.ds.variables if self.grid.ds[var].dims == ('y', 'x')]
@@ -1199,9 +1347,14 @@ class Grid2SiteProjection(object):
             ds = self.grid.ds[var_sel]
             
             # cleanup the the coordinates
+            
             coords2del = list(ds.coords)
-            coords2del.remove(coord1)
-            coords2del.remove(coord2)
+            
+            try:
+                coords2del.remove(coord1)
+                coords2del.remove(coord2)
+            except:
+                pass
             # coords2del.remove('t')
             
             ds = ds.drop_vars(coords2del)
@@ -1231,7 +1384,10 @@ class Grid2SiteProjection(object):
             # ds_at_sites = ds_at_sites.expand_dims({'datetime':[row.datetime_start]})
             
             # clean up coordinates
-            ds_at_sites = ds_at_sites.drop_vars([coord1, coord2])
+            try:
+                ds_at_sites = ds_at_sites.drop_vars([coord1, coord2])
+            except:
+                pass
             
             #### assess DQF
             qf_by_variable = self.grid.qf_managment.qf_by_variable
@@ -1295,10 +1451,12 @@ class Grid2SiteProjection(object):
             DESCRIPTION.
 
         """
-        if self.grid.grid_type == 'scan_angle':
+        if self.grid.grid_type in  ['scan_angle', 'lonlatmesh']:
             coord1, coord2 = 'x', 'y'
         elif self.grid.grid_type == 'lonlat':
             coord1, coord2 = 'lon', 'lat'
+        else:
+            assert(False), f'{self.grid.grid_type} geht nich'
         if the_new_way:
             if data_quality == 'high':
                 ds = self.grid.data_by_quality_high
@@ -1359,7 +1517,6 @@ class Grid2SiteProjection(object):
             ds_sel = ds.where(wheres)
             
             if radius == 10:
-                print('found it')
                 self.tp_ds_sel = ds_sel.copy()
             # median
             # dst = ds_sel.median(dim = ['x', 'y'])
@@ -1561,7 +1718,8 @@ class Grid2SiteProjection(object):
             #     out[e,6] = dist[argmin]
             out, dist_array = get_dists(self.grid.lonlat, lon_lat_sites)
             # return out
-            if self.grid.grid_type == 'scan_angle':
+            self.tp_out = (out, dist_array)
+            if self.grid.grid_type in  ['scan_angle', 'lonlatmesh']:
                 dist_array = _xr.DataArray(data = dist_array,
                                          dims = ['y','x','site'],
                                          coords = {'site': idx,
@@ -1578,7 +1736,7 @@ class Grid2SiteProjection(object):
                                                    'lat': self.grid.ds.lat}
                                         )
             else:
-                assert(False), 'nenen geht nich'
+                assert(False), f'nenen {self.grid.grid_type} geht nich'
             self._distance_grids = dist_array
             self._closest_points = _pd.DataFrame(out, columns = ['argmin_x', 'argmin_y','lon_gritpoint', 'lat_gridpoint', 'lon_station', 'lat_station', 'distance_station_gridpoint'], index = idx)
             # closest_point = closest_point[closest_point.distance_station_gridpoint < discard_outsid_grid]
@@ -1719,34 +1877,37 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
     def __init__(self, *args):
         super().__init__(*args)
 #         self._varname4test = 'CMI_C02'
+        self._rgb = None
 
-    
-    def plot_true_color(self, 
+    @property
+    def rgb(self):
+        if isinstance(self._rgb, type(None)):
+            self.generate_rgb()
+        return self._rgb
+
+    def generate_rgb(self, 
                         gamma = 1.8,#2.2, 
                         contrast = 130, #105
-                        projection = None,
-                        bmap = None,
-                        width = 5e6,
-                        height = 3e6,
-                        **kwargs,
                        ):
-        out = {}
-        channels_rgb = dict(red = self.ds['CMI_C02'].data.copy(),
-                            green = self.ds['CMI_C03'].data.copy(),
-                            blue = self.ds['CMI_C01'].data.copy())
+
+        # get the rgb including the conversion from nIR to green
+        
+        channels_rgb = dict(red = self.ds['CMI_C02'].copy(),
+                            green = self.ds['CMI_C03'].copy(),
+                            blue = self.ds['CMI_C01'].copy())
         
         channels_rgb['green_true'] = 0.45 * channels_rgb['red'] + 0.1 * channels_rgb['green'] + 0.45 * channels_rgb['blue']
-
         
-        
+        # adjust image, e.g gamma etc
         for chan in channels_rgb:
             col = channels_rgb[chan]
             # Apply range limits for each channel. RGB values must be between 0 and 1
             try:
-                new_col = col / col[~_np.isnan(col)].max()
+                new_col = col / col.max()
             except ValueError:
                 print('No valid data in at least on of the channels')
-                return False
+                assert(False)
+                # return False
             
             # apply gamma
             if not isinstance(gamma, type(None)):
@@ -1759,54 +1920,126 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
                 new_col = cfact*(new_col-.5)+.5
             
             channels_rgb[chan] = new_col
-            
-        rgb_image = _np.dstack([channels_rgb['red'],
-                             channels_rgb['green_true'],
-                             channels_rgb['blue']])
-        rgb_image = _np.clip(rgb_image,0,1)
-            
-        a = _plt.subplot()
-        if isinstance(projection, type(None)) and isinstance(bmap, type(None)):
-            
-            a.imshow(rgb_image)
-#             a.set_title('GOES-16 RGB True Color', fontweight='semibold', loc='left', fontsize=12);
-#             a.set_title('%s' % scan_start.strftime('%d %B %Y %H:%M UTC '), loc='right');
-            a.axis('off')
-    
-        else:          
-            lons,lats = self.lonlat
-            
-            # Make a new map object Lambert Conformal projection
-            if not isinstance(bmap,_Basemap):
-                bmap = _Basemap(resolution='i', projection='aea', area_thresh=5000, 
-                             width=width, height=height, 
-    #                          lat_1=38.5, lat_2=38.5, 
-                             lat_0=38.5, lon_0=-97.5)
+        
+        # shape for plotting
+        red = channels_rgb["red"].copy()
+        green = channels_rgb["green_true"].copy()
+        blue = channels_rgb["blue"].copy()
+        
+        # Stack them along the last axis to create an RGB image
+        image_data = _np.stack([red, green, blue], axis=-1)
+        image_data = _np.clip(image_data,0,1)
+        # self.tp_image = image_data
+        # color = image_data.reshape(-1, 3)
+        coords = {'x': self.ds.x, 'y': self.ds.y, 'rgb':['r','g','b']}
+        da = _xr.DataArray(image_data, dims= ['y', 'x', 'rgb'], coords=coords)
+        self.ds['true_color'] = da
+        self._rgb = da
+        return da
 
-                bmap.drawcoastlines()
-                bmap.drawcountries()
-                bmap.drawstates()
-
-            # Create a color tuple for pcolormesh
-
-            # Don't use the last column of the RGB array or else the image will be scrambled!
-            # This is the strange nature of pcolormesh.
-            rgb_image = rgb_image[:,:-1,:]
-
-            # Flatten the array, becuase that's what pcolormesh wants.
-            colortuple = rgb_image.reshape((rgb_image.shape[0] * rgb_image.shape[1]), 3)
-
-            # Adding an alpha channel will plot faster, according to Stack Overflow. Not sure why.
-            colortuple = _np.insert(colortuple, 3, 1.0, axis=1)
-
-            # We need an array the shape of the data, so use R. The color of each pixel will be set by color=colorTuple.
-            pc = bmap.pcolormesh(lons, lats, channels_rgb['red'], color=colortuple, linewidth=0, latlon=True, **kwargs)
-            pc.set_array(None) # Without this line the RGB colorTuple is ignored and only R is plotted.
-            out['pc'] = pc
+    def plot_true_color(self, **kwargs):
+        out = {}
+        self.rgb
+        bmap,pc,cb = self.plot('true_color', 
+                        # color = self.rgb,
+                        colorbar = False,
+                        linewidth = 0,
+                        **kwargs)
+        # pc.set_linewidths(0.001)
+        # pc.set_edgecolor([0,0,0,0])
+        out['pc'] = pc
 #             plt.title('GOES-16 True Color', loc='left', fontweight='semibold', fontsize=15)
 #             plt.title('%s' % scan_start.strftime('%d %B %Y %H:%M UTC'), loc='right');
-            out['bmap'] = bmap
+        out['bmap'] = bmap
         return out
+
+#     def dep_plot_true_color(self, 
+#                         gamma = 1.8,#2.2, 
+#                         contrast = 130, #105
+#                         projection = None,
+#                         bmap = None,
+#                         width = 5e6,
+#                         height = 3e6,
+#                         **kwargs,
+#                        ):
+#         out = {}
+#         channels_rgb = dict(red = self.ds['CMI_C02'].data.copy(),
+#                             green = self.ds['CMI_C03'].data.copy(),
+#                             blue = self.ds['CMI_C01'].data.copy())
+        
+#         channels_rgb['green_true'] = 0.45 * channels_rgb['red'] + 0.1 * channels_rgb['green'] + 0.45 * channels_rgb['blue']
+
+        
+        
+#         for chan in channels_rgb:
+#             col = channels_rgb[chan]
+#             # Apply range limits for each channel. RGB values must be between 0 and 1
+#             try:
+#                 new_col = col / col[~_np.isnan(col)].max()
+#             except ValueError:
+#                 print('No valid data in at least on of the channels')
+#                 return False
+            
+#             # apply gamma
+#             if not isinstance(gamma, type(None)):
+#                 new_col = new_col**(1/gamma)
+            
+#             # contrast
+#             #www.dfstudios.co.uk/articles/programming/image-programming-algorithms/image-processing-algorithms-part-5-contrast-adjustment/
+#             if not isinstance(contrast, type(None)):
+#                 cfact = (259*(contrast + 255))/(255.*259-contrast)
+#                 new_col = cfact*(new_col-.5)+.5
+            
+#             channels_rgb[chan] = new_col
+        
+#         rgb_image = _np.dstack([channels_rgb['red'],
+#                              channels_rgb['green_true'],
+#                              channels_rgb['blue']])
+#         rgb_image = _np.clip(rgb_image,0,1)
+#         self.tp_rgb = rgb_image
+        
+#         a = _plt.subplot()
+#         if isinstance(projection, type(None)) and isinstance(bmap, type(None)):
+            
+#             a.imshow(rgb_image)
+# #             a.set_title('GOES-16 RGB True Color', fontweight='semibold', loc='left', fontsize=12);
+# #             a.set_title('%s' % scan_start.strftime('%d %B %Y %H:%M UTC '), loc='right');
+#             a.axis('off')
+    
+#         else:          
+#             lons,lats = self.lonlat
+            
+#             # Make a new map object Lambert Conformal projection
+#             if not isinstance(bmap,_Basemap):
+#                 bmap = _Basemap(resolution='i', projection='aea', area_thresh=5000, 
+#                              width=width, height=height, 
+#     #                          lat_1=38.5, lat_2=38.5, 
+#                              lat_0=38.5, lon_0=-97.5)
+
+#                 bmap.drawcoastlines()
+#                 bmap.drawcountries()
+#                 bmap.drawstates()
+
+#             # Create a color tuple for pcolormesh
+
+#             # Don't use the last column of the RGB array or else the image will be scrambled!
+#             # This is the strange nature of pcolormesh.
+#             rgb_image = rgb_image[:,:-1,:]
+
+#             # Flatten the array, becuase that's what pcolormesh wants.
+#             colortuple = rgb_image.reshape((rgb_image.shape[0] * rgb_image.shape[1]), 3)
+
+#             # Adding an alpha channel will plot faster, according to Stack Overflow. Not sure why.
+#             colortuple = _np.insert(colortuple, 3, 1.0, axis=1)
+
+#             # We need an array the shape of the data, so use R. The color of each pixel will be set by color=colorTuple.
+#             pc = bmap.pcolormesh(lons, lats, channels_rgb['red'], color=colortuple, linewidth=0, latlon=True, **kwargs)
+#             pc.set_array(None) # Without this line the RGB colorTuple is ignored and only R is plotted.
+#             out['pc'] = pc
+# #             plt.title('GOES-16 True Color', loc='left', fontweight='semibold', fontsize=15)
+# #             plt.title('%s' % scan_start.strftime('%d %B %Y %H:%M UTC'), loc='right');
+#             out['bmap'] = bmap
+#         return out
 
 # class ABI_L2_AOD(GeosSatteliteProducts):
 #     def __init__(self, *args):
@@ -1973,7 +2206,7 @@ class ABI_L2_ACHA(GeosSatteliteProducts):
         '''Cloud Top Height'''
         super().__init__(*args)
         
-        if self.product_info['version'] in ['bla',]:
+        if self.product_info['version'] in ['M6',]:
             global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
             
             self.qf_managment = QfManagment(self, 
@@ -2039,6 +2272,37 @@ class ABI_L2_SRB(GeosSatteliteProducts):
         else:
             raise GoesExceptionVerionNotRecognized(self)
         
+        
+############################################
+#### Below are the JPSS products
+
+class JRR_AOD(GeosSatteliteProducts):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # self.valid_qf = [0,1]
+        
+        if self.product_info['version'] in [3.0,]:
+            
+            global_qf = [{'high':   [0], 
+                          'medium': [1],
+                          'low':    [2],
+                          'bad':    [3]}]
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+        # elif self.product_info['version'] in ['M3',]:
+        #     global_qf = [{'high':   [0], 
+        #                   'low': [1],
+        #                   }]
+        #     self.qf_managment = QfManagment(self, 
+        #                                     qf_representation='as_is', 
+        #                                     global_qf= global_qf, 
+        #                                    )
+        else:
+            raise GoesExceptionVerionNotRecognized(self)
+
+
 ############################################
 #### specialized function ... probably of limited usefullness for the average user    
 def projection_function(row, stations, test = False, verbose = False):
@@ -2110,46 +2374,50 @@ def projection_function(row, stations, test = False, verbose = False):
     
     return 
 
-def projection_function_multi(row, stations = None, verbose = True):
-    # if verbose:
-    #     print('projection_function_multi')
-
-    if row.path2file_local_processed.is_file():
-        if verbose:
-            print(f'file exists... skip {row.path2file_local_processed}')
-        return
-    if not row.path2file_local.is_file():
-        print('^', end = '', flush = True)
-        #### download        
-        # self.aws.clear_instance_cache()     #-> not helping           
-        aws = _s3fs.S3FileSystem(anon=True, skip_instance_cache=True) #- not helping
-        print('.', end = '', flush = True)
-        aws.clear_instance_cache()
-        print('.', end = '', flush = True)
-        # print(f'aws.get({row.path2file_aws.as_posix()}, {row.path2file_local.as_posix()}')
-        aws.get(row.path2file_aws.as_posix(), row.path2file_local.as_posix())
-        print('-', end = '', flush = True)
-    #### process
-    # return
-    raise_exception = True
+def projection_function_multi(row, error_queue, stations = None, verbose = True):
     try:
-        rowold = row.copy()
-        projection_function(row, stations)
-        if not row.equals(rowold):
-            print('row changed ... return')
-            return row, rowold
+        # if verbose:
+        #     print('projection_function_multi')
+    
+        if row.path2file_local_processed.is_file():
+            if verbose:
+                print(f'file exists... skip {row.path2file_local_processed}')
+            return
+        if not row.path2file_local.is_file():
+            print('^', end = '', flush = True)
+            #### download        
+            # self.aws.clear_instance_cache()     #-> not helping           
+            aws = _s3fs.S3FileSystem(anon=True, skip_instance_cache=True) #- not helping
+            print('.', end = '', flush = True)
+            aws.clear_instance_cache()
+            print('.', end = '', flush = True)
+            # print(f'aws.get({row.path2file_aws.as_posix()}, {row.path2file_local.as_posix()}')
+            aws.get(row.path2file_aws.as_posix(), row.path2file_local.as_posix())
+            print('-', end = '', flush = True)
+        #### process
+        # return
+        raise_exception = True
+        try:
+            rowold = row.copy()
+            projection_function(row, stations)
+            if not row.equals(rowold):
+                print('row changed ... return')
+                return row, rowold
+            if verbose:
+                print(':', end = '', flush = True)
+        except :
+            if raise_exception:
+                raise
+            else:
+                print(f'error applying function on one file {row.path2file_local.name}. The raw fill will still be removed (unless keep_files is True) to avoid storage issues')
+        #### remove raw file
+        # if not self.keep_files:
+        row.path2file_local.unlink()
         if verbose:
-            print(':', end = '', flush = True)
-    except:
-        if raise_exception:
-            raise
-        else:
-            print(f'error applying function on one file {row.path2file_local.name}. The raw fill will still be removed (unless keep_files is True) to avoid storage issues')
-    #### remove raw file
-    # if not self.keep_files:
-    row.path2file_local.unlink()
-    if verbose:
-        print('|', end = '', flush = True)
+            print('|', end = '', flush = True)
+
+    except Exception as e:
+        error_queue.put(e)#traceback.format_exc())
     return
 
 def projection_function_test(row, stations):
@@ -2224,3 +2492,7 @@ abi_products = [{'product_name': 'ABI-L2-ACHA',
                 # 'long_name': 'Cloud Top Temperature', 
                 # 'satlab_class': ABI_L2_ACHT},
                ]
+
+
+##########################################################
+##### temp files for jpssscraper develop
