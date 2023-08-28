@@ -357,8 +357,12 @@ if __name__ == '__main__':
     # if not fnlog.is_file():
     #     with open(fnlog, 'w') as log_out:
     #         log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
-            
+    
+    #### settings - hardcoded
+    version = 1        
+    
     #### argparsing
+    
     parser = argparse.ArgumentParser()
     parser.add_argument('-i', '--init', help = "Path to initiation file. All other arguments will be ignored.")
     parser.add_argument('-n', '--todo', nargs='+', default=[], help = 'list of processes to run. To see option type jibarish here read the error message')
