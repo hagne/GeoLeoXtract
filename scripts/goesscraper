@@ -28,7 +28,7 @@ import configparser
 import pandas as pd
 import ast
 import numpy as np
-
+import os
 
 warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
 
@@ -454,6 +454,7 @@ if __name__ == '__main__':
         print('========')
         print('Settings')
         print('========')
+        print(f'pid: {os.getpid()}')
         print(f'start: {start}')
         print(f'end: {end}')
         print(f'cpus: {cpus}')

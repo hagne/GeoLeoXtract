@@ -44,7 +44,7 @@ ABI_product_info = {'ABI-L1b-Rad': 'Radiances',
 VIIRS_product_info = {'AEROSOL_AOD_EN': 'AOD',
                       }
 
-satellite_list = [dict(names = ['NOAA 20', 'NOAA_20'], 
+satellite_list = [dict(names = ['NOAA 20', 'NOAA_20', 'NOAA20'], 
                        type_of_orbit = 'leo'),
                   dict(names = ['GOES 16', 'G16',], 
                        type_of_orbit = 'goes'),

@@ -36,7 +36,8 @@ class JPSSSraper(object):
                  product = 'AOD', satellite = 'NOAA 20', sensor = 'VIIRS', 
                  p2fld_out = '/export/htelg/tmp/', prefix = 'projected2surfrad',
                  reporter = None,
-                 overwrite = False, verbose = False):
+                 overwrite = False, 
+                 verbose = False):
         
         self.reporter = reporter
         self.start = start
@@ -149,7 +150,7 @@ class JPSSSraper(object):
                     # p2f = [sgrp.path2file_local1[0], sgrp.path2file_local2[0]]
                     p2f = [op.path2file_local1 , op.path2file_local2] 
                     # p2f = [sgrp.path2file_local1[0].as_posix(), sgrp.path2file_local2[0].as_posix()]
-                    ngsinst = ngs.open_file(p2f, verbose=True)
+                    ngsinst = ngs.open_file(p2f, verbose=self.verbose)
                     
                     #remove some variables (before processing) more are removed after processing
                     for var in ['StartRow', 'StartColumn', 'MeanAOD', 'MeanAODHighQuality']:
@@ -273,8 +274,12 @@ class JPSSSraper(object):
                     if not isinstance(self.reporter, type(None)):
                         if proc.exitcode == 0:
                             self.reporter.clean_increment()
-                        elif proc.exitcode == -9:
+                        elif proc.exitcode == -9: #process was killed due to timeout
                             self.reporter.errors_increment()
+                        elif proc.exitcode == 1: #process generated an exception that should be rison further down
+                            self.reporter.errors_increment()
+                        else:
+                            assert(False), f'exitcode is {proc.exitcode}. What does that mean?'
                     #### TODO: Test what the result of this process was. If it resulted in an error, make sure you know the error or stopp the entire process!!!
                 print('.', end = '')
                 
@@ -291,6 +296,7 @@ class JPSSSraper(object):
                     else:         
                         time.sleep(sleeptime)
                         continue
+                    
                 process = multiprocessing.Process(target=process_this, args=(arg,error_queue), name = 'jpssscraper')
                 process.daemon = True
                 processes.append(process)

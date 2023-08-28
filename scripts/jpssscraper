@@ -29,6 +29,8 @@ import pandas as pd
 import ast
 import numpy as np
 import nesdis_gml_synergy.scrapers.jpss as ngsjpss
+import productomator.lab as prolab
+
 
 
 warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
@@ -45,6 +47,7 @@ def process_generic(product = 'AOD',
                     path2processed =  '/nfs/stu3data2/Satellite_data/JPSS/{satellite}/JRR_{product}_projected2surfrad/',
                     file_prefix = 'projected2surfrad',
                     no_of_cpu = 1,
+                    reporter = None,
                     verbose = False,
                     test = False
                     ):
@@ -60,6 +63,7 @@ def process_generic(product = 'AOD',
                              sensor=sensor,
                              p2fld_out=path2processed,
                              prefix=file_prefix,
+                             reporter = reporter,
                              overwrite=False,
                              verbose=verbose,)
     
@@ -101,8 +105,7 @@ if __name__ == '__main__':
     # parser.add_argument('-t', '--test', action="store_true", help='will not execute at the end.')
     # parser.add_argument('-c', '--comment', help = 'some comment, e.g. which server this was stared on')
     args = parser.parse_args()
-    print('args:')
-    print(args)
+
     
     
     #### TODO create log file
@@ -132,6 +135,7 @@ if __name__ == '__main__':
         reverse = 'reverse' in config['workplan'].keys()
         path2processed =  config['file_io']['path2processed']
         file_prefix =  config['file_io']['file_prefix']
+        reporter_name = f'jpssscraper_{args.init}'
         sites = None
         network = None
         if 'network' in config['locations']:
@@ -189,6 +193,7 @@ if __name__ == '__main__':
         print(f'network: {network}')
         print(f'sites: {sites}')
         print(f'satellites: {satellites}')
+        print(f'reporter_name: {reporter_name}')
         # print(f'{}')
         # print(f'{}')
         print('==============')
@@ -198,9 +203,13 @@ if __name__ == '__main__':
         # test = True
         if test == 'True':
             print('just testing... generic')
+           
         # if 1:
         #     pass
-        else:
+        else:        
+            reporter = prolab.Reporter(reporter_name, 
+                                       log_folder='/home/grad/htelg/.processlogs', 
+                                       reporting_frequency=(1,'h'))
             for product in products:
                 for satellite in satellites:
                     #### execute generic
@@ -212,7 +221,8 @@ if __name__ == '__main__':
                                     no_of_cpu = int(cpus),
                                     start = start,
                                     end = end,
-                                    verbose = verbose, 
+                                    verbose = verbose,
+                                    reporter = reporter,
                                     test = test == 'workplan')
     else:
         assert(False), f'runtype "{runtype}" is not a valid option.'

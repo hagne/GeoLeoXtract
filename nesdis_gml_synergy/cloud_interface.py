@@ -364,8 +364,9 @@ class AwsQuery(object):
             self.type_of_orbit = 'geo'
             self.satellite_info = 'FIXIT'
         else:            
-            assert(satellite == 'NOAA 20'), 'somewhere NOAA20 is hard coded!!!! find it and fix it!!'
             self.satellite_info = sli[0]
+            self.satellite = self.satellite_info['names'][0]
+            assert(self.satellite == 'NOAA 20'), 'somewhere NOAA20 is hard coded!!!! find it and fix it!!'
             self.type_of_orbit = self.satellite_info['type_of_orbit']
         
         
