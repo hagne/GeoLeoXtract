@@ -2067,11 +2067,12 @@ class ABI_L2_MCMIPC_M6(GeosSatteliteProducts):
 #### Below use assesment dataset
 #################################  
 class GoesExceptionVerionNotRecognized(Exception):
-    def __init__(self,si, message = None):
-        txt = f"The version of this product ({si.product_info['version']}) has not been tested and might return false results."#"\nfullname: {si.product_name}"
-        if not isinstance(message, type(None)):
-            txt +='\n'+message
-        super().__init__(txt)
+    def __init__(self,message = 'Product version not recognized'):
+        # txt = f"The version of this product ({si.product_info['version']}) has not been tested and might return false results."#"\nfullname: {si.product_name}"
+        # if not isinstance(message, type(None)):
+        #     txt +='\n'+message
+        self.message = message
+        super().__init__(self.message)
 
 class ABI_L2_LST(GeosSatteliteProducts):
     def __init__(self, *args):
@@ -2205,7 +2206,6 @@ class ABI_L2_ACHA(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Cloud Top Height'''
         super().__init__(*args)
-        
         if self.product_info['version'] in ['M6',]:
             global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
             
@@ -2215,7 +2215,8 @@ class ABI_L2_ACHA(GeosSatteliteProducts):
                                            )
             
         else:
-            raise GoesExceptionVerionNotRecognized(self)
+            txt = f'Product version {self.product_info["version"]} unknown for product {{self.product_info["name"]}}.'
+            raise GoesExceptionVerionNotRecognized(txt)
         
 class ABI_L2_CTP(GeosSatteliteProducts):
     def __init__(self, *args):

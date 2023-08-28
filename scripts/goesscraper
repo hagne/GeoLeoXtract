@@ -384,6 +384,7 @@ if __name__ == '__main__':
     #### initiation file parsing
     
     if not isinstance(args.init, type(None)):
+        assert(pl.Path(args.init).is_file()), f'init file {args.init} does not exist'
         config = configparser.ConfigParser(allow_no_value=True,)
         config.read(args.init)
         if ('range' in config['workplan'].keys()) and ('start' in config['workplan'].keys()):
@@ -392,7 +393,10 @@ if __name__ == '__main__':
         if 'range' in config['workplan'].keys():
             tr = config['workplan']['range'].split()
             end = pd.Timestamp.now().__str__()
-            start = (pd.Timestamp.now() - pd.to_timedelta(int(tr[1]), 'days')).__str__()
+            if tr[0] == 'all_time':
+                start = '20170501'
+            else:
+                start = (pd.Timestamp.now() - pd.to_timedelta(int(tr[1]), 'days')).__str__()
         elif 'start' in config['workplan'].keys():
             start = config['workplan']['start']
             end = config['workplan']['end']
@@ -534,24 +538,27 @@ if __name__ == '__main__':
     #### concatenate
     #### TODO: parallize! parallelization needs to be done within Concatonator
     if concatenate:
-        print('======')
-        print('Concatenate')
-        print('-------')
-        for product in products:
-            for satellite in satellites:
-                path2processed_filled = pl.Path(path2processed.format(satellite = satellite, product = product))
-                path2concat_files = path2processed_filled.parent.joinpath(path2processed_filled.name + '_concat')
-                datetime_format = file_prefix.format(product = product)+'_%Y%m%d_%H%M%S.nc'
-                cc = ngs.Concatonator(path2scraped_files=path2processed_filled,
-                                      path2concat_files =path2concat_files,
-                                      datetime_format=datetime_format,
-                                      rule=concat_rule, 
-                                      skip_last_day=concat_skip_last,
-                                      file_prefix = file_prefix.format(product = product),
-                                      test = False)
-                ds = cc.concat_and_save(num_cpus=cpus,
-                    # save = True, 
-                    # test= True, 
-                    # verbose=True,
-                )
-        print('=== DONE ===')
+        if test == 'True':
+            print('just testing... concat')
+        else:
+            print('======')
+            print('Concatenate')
+            print('-------')
+            for product in products:
+                for satellite in satellites:
+                    path2processed_filled = pl.Path(path2processed.format(satellite = satellite, product = product))
+                    path2concat_files = path2processed_filled.parent.joinpath(path2processed_filled.name + '_concat')
+                    datetime_format = file_prefix.format(product = product)+'_%Y%m%d_%H%M%S.nc'
+                    cc = ngs.Concatonator(path2scraped_files=path2processed_filled,
+                                          path2concat_files =path2concat_files,
+                                          datetime_format=datetime_format,
+                                          rule=concat_rule, 
+                                          skip_last_day=concat_skip_last,
+                                          file_prefix = file_prefix.format(product = product),
+                                          test = False)
+                    ds = cc.concat_and_save(num_cpus=cpus,
+                        # save = True, 
+                        # test= True, 
+                        # verbose=True,
+                    )
+            print('=== DONE ===')
