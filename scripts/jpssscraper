@@ -18,17 +18,17 @@ from start to present ... running:
 """
 
 
-import nesdis_aws
+#import nesdis_aws
 import nesdis_gml_synergy.satlab as ngs
 import pathlib as pl
 import warnings
-import socket
+#import socket
 import argparse
 import configparser
 import pandas as pd
 import ast
 import numpy as np
-import nesdis_gml_synergy.satscraper as ngsjpss
+import nesdis_gml_synergy.scrapers.jpss as ngsjpss
 
 
 warnings.filterwarnings("ignore", message="Degrees of freedom <= 0 for slice.")
@@ -152,7 +152,7 @@ if __name__ == '__main__':
                 sites = None
                 
         assert(np.any([not isinstance(i, type(None)) for i in [sites,network]])), 'Init file does not contain sites or networks'
-        satellites = [int(i) for i in config['products']['satellite'].split('#')[0].split(',')]
+        satellites = [i.strip() for i in config['products']['satellite'].split('#')[0].split(',')]
         
         ### concat
         concatenate = 'concatenate' in config['concatenate'].keys()
