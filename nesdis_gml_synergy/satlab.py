@@ -415,8 +415,12 @@ class Concatonator(object):
            
             # if 0:
                 # get the date
-            workplan['date'] = workplan.apply(lambda row: row.datetime.date(), axis=1)
-
+            #### FIXME the below results in errors (sometimes?), the below should show if the reason is ab enott workplan.
+            try:
+                workplan['date'] = workplan.apply(lambda row: row.datetime.date(), axis=1)
+            except:
+                print(f'wp shape: {workplan.shape}')
+                raise
 
             #remove last day ... only work on the days before last to get daily files
             if self.skip_last_day:
