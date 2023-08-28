@@ -333,7 +333,7 @@ def process_generic(product = 'ACM',
     print('========', flush = True)
     print('workplan', flush = True)
     print('========', flush = True)
-    print(f'workplan.shape: {query.workplan.shape}', flush = True)
+    print(f'workplan.shape: {query.workplan.shape}  - {pd.Timestamp.now()}', flush = True)
     if reverse:
         query.workplan = query.workplan[::-1]
     if test:
@@ -536,13 +536,12 @@ if __name__ == '__main__':
         assert(False), f'runtype "{runtype}" is not a valid option.'
     
     #### concatenate
-    #### TODO: parallize! parallelization needs to be done within Concatonator
     if concatenate:
         if test == 'True':
             print('just testing... concat')
         else:
             print('======')
-            print('Concatenate')
+            print(f'Concatenate - {pd.Timestamp.now()}')
             print('-------')
             for product in products:
                 for satellite in satellites:
