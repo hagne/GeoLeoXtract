@@ -2083,8 +2083,8 @@ class ABI_L2_LST(GeosSatteliteProducts):
         super().__init__(*args)
         
         #quality flags changed at some point
-        
-        if self.product_info['version'] in ['M3',]:
+        if self.ds.DQF.attrs['flag_meanings'] == 'good_retrieval_qf valid_input_data_qf invalid_due_to_bad_or_missing_input_data_qf valid_clear_conditions_qf invalid_due_to_cloudy_conditions_qf valid_LZA_qf degraded_due_to_LZA_threshold_exceeded_qf valid_land_or_inland_water_surface_type_qf invalid_due_to_water_surface_type_qf valid_land_surface_temperature_qf invalid_due_to_out_of_range_land_surface_temperature_qf':
+        # if self.product_info['version'] in ['M3',]:
             print('bubasd')
             global_qf = [{'high':   [0], 
                           'medium': [8],
@@ -2094,7 +2094,8 @@ class ABI_L2_LST(GeosSatteliteProducts):
                                             qf_representation='as_is', 
                                             global_qf= global_qf, 
                                            )
-        elif self.product_info['version'] in ['M6',]:
+        elif self.ds.DQF.attrs['flag_meanings'] == 'high_quality_retrieval_qf, medium_quality_retrieval_qf, low_quality_retrieval_qf, no_retrieval_qf':
+        # elif self.product_info['version'] in ['M6',]:
             global_qf = [{'high':   [0], 
                           'medium': [1],
                            'low':   [2],
@@ -2137,6 +2138,7 @@ class ABI_L2_AOD(GeosSatteliteProducts):
                                             global_qf= global_qf, 
                                            )
         else:
+            print(self.ds.t)
             raise GoesExceptionVerionNotRecognized(self)
 
 class ABI_L2_COD(GeosSatteliteProducts):
@@ -2145,7 +2147,8 @@ class ABI_L2_COD(GeosSatteliteProducts):
         super().__init__(*args)
         # self.valid_qf = [0,]  
         
-        if self.product_info['version'] in ['M3','M6',]:
+        if self.ds.DQF.attrs['flag_meanings']  == 'day_algorithm_pixel_qf night_algorithm_pixel_qf good_quality_qf degraded_quality_due_to_snow_or_sea_ice_qf degraded_quality_due_to_twilight_qf invalid_due_to_clear_conditions_qf invalid_due_LZA_threshold_exceeded_qf degraded_due_to_LZA_threshold_exceeded_qf invalid_due_to_not_geolocated_qf invalid_due_to_missing_or_bad_input_data_qf degraded_due_to_nonconvergence_qf':
+        # if self.product_info['version'] in ['M3','M6',]:
             if night:
                 qf0bad = 0
             else:
@@ -2158,6 +2161,7 @@ class ABI_L2_COD(GeosSatteliteProducts):
             self.qf_managment = QfManagment(self, qf_representation='binary', global_qf=global_qf, number_of_bits=5)
             
         else:
+            print(self.ds.t)
             raise GoesExceptionVerionNotRecognized(self)
 
 class ABI_L2_ACM(GeosSatteliteProducts):
@@ -2169,8 +2173,8 @@ class ABI_L2_ACM(GeosSatteliteProducts):
         # self.qf_medium = [2,4,5,6]
         # self.qf_low = None
         # self.qf_bad = [1,3]
-        
-        if self.product_info['version'] in ['M3','M6',]:
+        if self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf invalid_due_to_not_geolocated_or_algorithm_non-execution_qf degraded_due_to_LZA_threshold_exceeded_qf invalid_due_to_bad_or_missing_input_11um_brightness_temperature_qf degraded_due_to_bad_input_3.9um_pixel_qf degraded_due_to_failed_0.64um_tests_qf degraded_due_to_other_bad_bands_qf':
+        # if self.product_info['version'] in ['M3','M6',]:
             global_qf = [{'high':   [0], 
                           'medium': [2,4,5,6],
                           'bad':    [1,3]}]
@@ -2179,8 +2183,17 @@ class ABI_L2_ACM(GeosSatteliteProducts):
                                             qf_representation='as_is', 
                                             global_qf= global_qf, 
                                            )
+        elif self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf bad_quality_qf space_qf spare spare spare degraded_quality_qf':
+            global_qf = [{'high':   [0], 
+                          'medium': [6],
+                          'bad':    [1,2,3,4,5]}]
             
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
         else:
+            print(self.ds.t)
             raise GoesExceptionVerionNotRecognized(self)
         
 class ABI_L2_ADP(GeosSatteliteProducts):
@@ -2188,8 +2201,8 @@ class ABI_L2_ADP(GeosSatteliteProducts):
         '''Clear Sky Mask'''
         super().__init__(*args)
         # self.qf_representation = 'binary'
-        
-        if self.product_info['version'] in ['M6',]:
+        if self.ds.DQF.attrs['flag_meanings'] == 'good_smoke_detection_retrieval_qf invalid_smoke_detection_due_to_snow_ice_clouds_or_degraded_source_data_qf good_dust_detection_retrieval_qf invalid_dust_detection_due_to_snow_ice_clouds_or_bad_source_data_qf low_confidence_smoke_detection_qf medium_confidence_smoke_detection_qf high_confidence_smoke_detection_qf low_confidence_dust_detection_qf medium_confidence_dust_detection_qf high_confidence_dust_detection_qf out_of_sun_glint_qf within_sun_glint_qf within_valid_solar_and_satellite_zenith_angle_range_qf outside_valid_solar_or_satellite_zenith_angle_range_qf':
+        # if self.product_info['version'] in ['M6',]:
             qf_by_variable =  {'Aerosol': 'ignore',
                                'Smoke': {"bad":    {'bins': [0,],  'values':[1,]},
                                          "low" :   {'bins': [2,3], 'values':[0,]},
@@ -2204,6 +2217,7 @@ class ABI_L2_ADP(GeosSatteliteProducts):
             self.qf_managment = QfManagment(self, qf_representation='binary', qf_by_variable = qf_by_variable, global_qf= global_qf, number_of_bits=8)
             
         else:
+            print(self.ds.t)
             raise GoesExceptionVerionNotRecognized(self)
         
         
@@ -2212,15 +2226,23 @@ class ABI_L2_ACHA(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Cloud Top Height'''
         super().__init__(*args)
-        if self.product_info['version'] in ['M6',]:
+        if self.ds.DQF.attrs['flag_meanings']== 'good_quality_qf invalid_due_to_not_geolocated_qf invalid_due_to_LZA_threshold_exceeded_qf invalid_due_to_bad_or_missing_brightness_temp_data_qf invalid_due_to_clear_or_probably_clear_sky_qf invalid_due_to_unknown_cloud_type_qf invalid_due_to_nonconvergent_retrieval_qf':
+        # if self.product_info['version'] in ['M6',]:
             global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
             
             self.qf_managment = QfManagment(self, 
                                             qf_representation='as_is', 
                                             global_qf= global_qf, 
                                            )
+        elif self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf marginal_quality_qf retrieval_attempted_qf bad_quality_qf opaque_retrieval_qf':
+            global_qf = [{'high': [0], 'medium': [1], 'low': [2],'bad': [3,4]}]
             
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
         else:
+            print(self.ds.t)
             txt = f'Product version {self.product_info["version"]} unknown for product {{self.product_info["name"]}}.'
             raise GoesExceptionVerionNotRecognized(txt)
         
