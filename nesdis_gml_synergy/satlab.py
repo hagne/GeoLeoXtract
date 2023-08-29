@@ -2116,7 +2116,8 @@ class ABI_L2_AOD(GeosSatteliteProducts):
         super().__init__(*args)
         # self.valid_qf = [0,1]
         
-        if self.product_info['version'] in ['M6',]:
+        if self.ds.DQF.attrs['flag_meanings'] == 'high_quality_retrieval_qf medium_quality_retrieval_qf low_quality_retrieval_qf no_retrieval_qf':
+        # if self.product_info['version'] in ['M6',]:
             
             global_qf = [{'high':   [0], 
                           'medium': [1],
@@ -2126,7 +2127,8 @@ class ABI_L2_AOD(GeosSatteliteProducts):
                                             qf_representation='as_is', 
                                             global_qf= global_qf, 
                                            )
-        elif self.product_info['version'] in ['M3',]:
+        elif self.ds.DQF.attrs['flag_meanings'] == 'good_retrieval_qf bad_retrieval_qf':
+        # elif self.product_info['version'] in ['M3',]:
             global_qf = [{'high':   [0], 
                           'low': [1],
                           }]
@@ -2227,7 +2229,8 @@ class ABI_L2_CTP(GeosSatteliteProducts):
         '''Cloud Top Pressure'''
         super().__init__(*args)
         
-        if self.product_info['version'] in ['bla',]:
+        # if self.product_info['version'] in ['bla',]:
+        if self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf invalid_due_to_not_geolocated_qf invalid_due_to_LZA_threshold_exceeded_qf invalid_due_to_bad_or_missing_brightness_temp_data_qf invalid_due_to_clear_or_probably_clear_sky_qf invalid_due_to_unknown_cloud_type_qf invalid_due_to_nonconvergent_retrieval_qf':
             global_qf = [{'high': [0], 'bad': [1,2,3,4,5,6]}]
             
             self.qf_managment = QfManagment(self, 
@@ -2235,7 +2238,15 @@ class ABI_L2_CTP(GeosSatteliteProducts):
                                             global_qf= global_qf, 
                                            )
             
+        elif self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf marginal_quality_qf retrieval_attempted_qf bad_quality_qf opaque_retrieval_qf':
+            global_qf = [{'high': [0], 'medium': [1], 'low': [2], 'bad': [3,4]}]
+            self.qf_managment = QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+            
         else:
+            print(self.ds.t)
             raise GoesExceptionVerionNotRecognized(self)
             
             
@@ -2243,8 +2254,8 @@ class ABI_L2_DSR(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Downwelling Shortwave Radiation'''
         super().__init__(*args)
-        
-        if self.product_info['version'] in ['bla',]:
+        if self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf degraded_quality_or_invalid_qf':
+        # if self.product_info['version'] in ['bla',]:
             global_qf = [{'high': [0], 'bad': [1,]}]
             
             self.qf_managment = QfManagment(self, 
@@ -2256,6 +2267,7 @@ class ABI_L2_DSR(GeosSatteliteProducts):
                                            )
             
         else:
+            print(self.ds.t)
             raise GoesExceptionVerionNotRecognized(self)
             
 class ABI_L2_SRB(GeosSatteliteProducts):
