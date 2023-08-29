@@ -230,7 +230,7 @@ def processACHA(path2log = None,
     product = 'ACHA'
     path2processed =  f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}_projected2surfrad/'
     query = nesdis_aws.nesdis_aws.AwsQuery(
-                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/ABI_L2_{product}/',
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/16/{product}/raw',
                                             satellite='16',
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
@@ -305,19 +305,26 @@ def process_generic(product = 'ACM',
                     path2processed =  '/nfs/stu3data2/Satellite_data/goes/{satellite}/ABI_L2_{product}_projected2surfrad/',
                     file_prefix = 'ABI_L2_{product}_projected2surfrad',
                     no_of_cpu = 1,
+                    version = 0,
                     reverse = False,
                     verbose = False,
                     test = False
                     ):
     # product = 'ACM'
-    path2processed =  path2processed.format(product = product, satellite = satellite)
+    path2processed =  path2processed.format(product = product, satellite = satellite, version = version)
     if 0:
         assert(pl.Path(path2processed).is_dir()), f"Output path does not exist ... generate it!:\n pl.Path('{path2processed}').mkdir()"
     else:
-        pl.Path(path2processed).mkdir(exist_ok = True)
+        pt = pl.Path(path2processed)
+        # pt.parent.parent.parent.parent.mkdir(exist_ok = True)
+        # pt.parent.parent.parent.mkdir(exist_ok = True)
+        # pt.parent.parent.mkdir(exist_ok = True)
+        pt.parent.mkdir(exist_ok = True)
+        pt.mkdir(exist_ok = True)
+        # pl.Path(path2processed).mkdir(exist_ok = True)
         
     query = ngsci.AwsQuery(
-                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/{satellite}/ABI_L2_{product}/',
+                                            path2folder_local=f'/nfs/stu3data2/Satellite_data/goes/{satellite}/{product}/raw',
                                             satellite=satellite,
                                             product=f'ABI-L2-{product}',
                                             scan_sector='C',
@@ -359,7 +366,15 @@ if __name__ == '__main__':
     #         log_out.write('datetime,run_status,error,success,warning,subprocess,server,comment\n')
     
     #### settings - hardcoded
-    version = 1        
+    version = 1 
+    '''
+    version 1
+    ==========
+    New:
+        - products are tested for there version. The AOD in particular had a 
+        change in version which came along a change in the qc-flags
+    '''
+       
     
     #### argparsing
     
@@ -536,6 +551,7 @@ if __name__ == '__main__':
                                     end = end,
                                     verbose = verbose, 
                                     reverse = reverse,
+                                    version = version,
                                     test = test == 'workplan')
     else:
         assert(False), f'runtype "{runtype}" is not a valid option.'

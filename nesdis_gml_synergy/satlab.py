@@ -2145,7 +2145,7 @@ class ABI_L2_COD(GeosSatteliteProducts):
         super().__init__(*args)
         # self.valid_qf = [0,]  
         
-        if self.product_info['version'] in ['bla',]:
+        if self.product_info['version'] in ['M3','M6',]:
             if night:
                 qf0bad = 0
             else:
@@ -2170,7 +2170,7 @@ class ABI_L2_ACM(GeosSatteliteProducts):
         # self.qf_low = None
         # self.qf_bad = [1,3]
         
-        if self.product_info['version'] in ['bla',]:
+        if self.product_info['version'] in ['M3','M6',]:
             global_qf = [{'high':   [0], 
                           'medium': [2,4,5,6],
                           'bad':    [1,3]}]
@@ -2189,7 +2189,7 @@ class ABI_L2_ADP(GeosSatteliteProducts):
         super().__init__(*args)
         # self.qf_representation = 'binary'
         
-        if self.product_info['version'] in ['bla',]:
+        if self.product_info['version'] in ['M6',]:
             qf_by_variable =  {'Aerosol': 'ignore',
                                'Smoke': {"bad":    {'bins': [0,],  'values':[1,]},
                                          "low" :   {'bins': [2,3], 'values':[0,]},
@@ -2254,8 +2254,11 @@ class ABI_L2_DSR(GeosSatteliteProducts):
     def __init__(self, *args):
         '''Downwelling Shortwave Radiation'''
         super().__init__(*args)
+
         if self.ds.DQF.attrs['flag_meanings'] == 'good_quality_qf degraded_quality_or_invalid_qf':
         # if self.product_info['version'] in ['bla',]:
+        # if self.product_info['version'] in ['M6',]:
+
             global_qf = [{'high': [0], 'bad': [1,]}]
             
             self.qf_managment = QfManagment(self, 
