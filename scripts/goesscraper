@@ -320,7 +320,7 @@ def process_generic(product = 'ACM',
     else:
         pt = pl.Path(path2processed)
         # pt.parent.parent.parent.parent.mkdir(exist_ok = True)
-        pt.parent.parent.parent.mkdir(exist_ok = True)
+        # pt.parent.parent.parent.mkdir(exist_ok = True)
         pt.parent.parent.mkdir(exist_ok = True)
         pt.parent.mkdir(exist_ok = True)
         pt.mkdir(exist_ok = True)
@@ -340,9 +340,9 @@ def process_generic(product = 'ACM',
                                                             )
                                             # keep_files=True
                                           )
-    print('========', flush = True)
+    print('--------', flush = True)
     print('workplan', flush = True)
-    print('========', flush = True)
+    print('--------', flush = True)
     print(f'workplan.shape: {query.workplan.shape}  - {pd.Timestamp.now()}', flush = True)
     if reverse:
         query.workplan = query.workplan[::-1]
