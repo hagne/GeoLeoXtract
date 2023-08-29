@@ -310,15 +310,18 @@ def process_generic(product = 'ACM',
                     verbose = False,
                     test = False
                     ):
-    # product = 'ACM'
+    if verbose:
+        print('=========')
+        print(f'satellite: {satellite}')
+        print(f'product: {product}')
     path2processed =  path2processed.format(product = product, satellite = satellite, version = version)
     if 0:
         assert(pl.Path(path2processed).is_dir()), f"Output path does not exist ... generate it!:\n pl.Path('{path2processed}').mkdir()"
     else:
         pt = pl.Path(path2processed)
         # pt.parent.parent.parent.parent.mkdir(exist_ok = True)
-        # pt.parent.parent.parent.mkdir(exist_ok = True)
-        # pt.parent.parent.mkdir(exist_ok = True)
+        pt.parent.parent.parent.mkdir(exist_ok = True)
+        pt.parent.parent.mkdir(exist_ok = True)
         pt.parent.mkdir(exist_ok = True)
         pt.mkdir(exist_ok = True)
         # pl.Path(path2processed).mkdir(exist_ok = True)
