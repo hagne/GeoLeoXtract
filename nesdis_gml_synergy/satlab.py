@@ -1087,7 +1087,7 @@ class GeosSatteliteProducts(object):
             # qcvar = [v for v in self.ds.variables if v in ['DQF', 'QCAll']]
             # assert(len(qcvar) == 1), f'something wrong with the qc flag name! found {qcvar}'
             # qcvar = qcvar[0]
-            
+            self.tp_valid_qf = valid_qf
             ds[var] = self.ds[var].where(self.ds.DQF.isin(valid_qf))
         
         #### cleanup the  coordinates
@@ -2131,7 +2131,7 @@ class ABI_L2_AOD(GeosSatteliteProducts):
         elif self.ds.DQF.attrs['flag_meanings'] == 'good_retrieval_qf bad_retrieval_qf':
         # elif self.product_info['version'] in ['M3',]:
             global_qf = [{'high':   [0], 
-                          'low': [1],
+                          'bad': [1],
                           }]
             self.qf_managment = QfManagment(self, 
                                             qf_representation='as_is', 
