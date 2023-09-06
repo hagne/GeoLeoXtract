@@ -267,14 +267,14 @@ class JPSSSraper(object):
                     assert(dt_in_sec > 0), 'process elaps time is smaller 0, its process creation time is probably not in utc! todo: find out how to determine the timezone that is used by psutil'
                     # print(dt_in_sec)
                     if dt_in_sec > timeout:
-                        # print(f"Process for number {process.name} exceeded the timeout and will be terminated.")
+                        print(f"Process for number {process.name} exceeded the timeout and will be terminated.")
                         process.terminate()
                 else:
                     proc = processes.pop(processes.index(process))
                     if not isinstance(self.reporter, type(None)):
                         if proc.exitcode == 0:
                             self.reporter.clean_increment()
-                        elif proc.exitcode == -9: #process was killed due to timeout
+                        elif proc.exitcode == -15: #process was killed due to timeout. I had that as -9 before, double check if both exit codes are possible?
                             self.reporter.errors_increment()
                         elif proc.exitcode == 1: #process generated an exception that should be rison further down
                             self.reporter.errors_increment()

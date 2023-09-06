@@ -1088,6 +1088,7 @@ class GeosSatteliteProducts(object):
             # assert(len(qcvar) == 1), f'something wrong with the qc flag name! found {qcvar}'
             # qcvar = qcvar[0]
             self.tp_valid_qf = valid_qf
+            self.tp_var = var
             ds[var] = self.ds[var].where(self.ds.DQF.isin(valid_qf))
         
         #### cleanup the  coordinates
