@@ -395,6 +395,9 @@ if __name__ == '__main__':
     print('args:')
     print(args)
     
+    #### change process name
+    import prctl
+    prctl.set_name(f"{args.init.replace('.ini', '')}")
     
     #### create log file
     logfn = f"{args.init.replace('.ini', '')}.log"

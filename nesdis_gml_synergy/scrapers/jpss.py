@@ -84,6 +84,12 @@ class JPSSSraper(object):
         if verbose:
             print('fct call - download_and_overpasses', end = ' ... ')
             print(f'sites = {sites}')
+        end = date + _pd.to_timedelta(0.9999999, 'd') # just under 1 will garantie that we stay in the same day
+        # end = date + _pd.to_timedelta(1, 'd') # just under 1 will garantie that we stay in the same day
+        print(date)
+        print(end)
+        # print(type(date))
+        # print(type(end))
         query = ngsci.AwsQuery(path2folder_local='/export/htelg/tmp/',
                                     satellite=self.satellite,
                                     sensor = self.sensor,
@@ -92,7 +98,7 @@ class JPSSSraper(object):
                                     # start='2022-11-13 12:00:00',
                                     # end='2022-11-14 13:00:00',
                                     start=date,
-                                    end=date + _pd.to_timedelta(1, 'd'),
+                                    end=end,
                                     site = sites
                                    )
         query.aws.clear_instance_cache()
@@ -235,6 +241,7 @@ class JPSSSraper(object):
                 print('done')
         except Exception as e:
             error_queue.put(e)
+            ds_out = None
         return ds_out
 
     def process(self, max_processes = 2, timeout = 300, sleeptime = 0.5):
