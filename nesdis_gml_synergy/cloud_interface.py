@@ -837,11 +837,13 @@ class AwsQuery(object):
             self.workplan.grp /=no_of_cpu
             self.workplan.grp = _np.ceil(self.workplan.grp)
             
+            run_status = 1
+            warning = 0
             for idx, grp in self.workplan.groupby('grp'):
                 print('=', end = '', flush = True)
                 subproslist = []
                 error_queue = mp.Queue()
-                
+                error = 0
                 for grpidx, row in grp.iterrows():
                     print(',',  end = '', flush = True)
                     # print(f'row: {row}', flush = True)
@@ -851,15 +853,18 @@ class AwsQuery(object):
                 [p.join() for p in subproslist]
                 
                 #### raise error if present
-                if not error_queue.empty():
-                    print("THIS SHOULD STOP EVERYTHING!!")
+                while not error_queue.empty():
                     e = error_queue.get()
-                    raise(e)
+                    if isinstance(e, RuntimeError) and (str(e) == 'NetCDF: HDF error'):
+                        print('RuntimeError, There was a problem reading the netcdf file. Clean-up required!!')
+                        error += 1
+                    else:
+                        print("THIS SHOULD STOP EVERYTHING!!")
+                        raise(e)   
+                        
                 datetime = _pd.Timestamp.now()
-                run_status = 1
-                error = 0
-                success = no_of_cpu
-                warning = 0
+                
+                success = no_of_cpu - error
                 if not isinstance(path2log, type(None)):
                     with open(path2log, 'a') as log_out:
                             log_out.write(f'{datetime},{run_status},{error},{success},{warning},{subprocess},{server},{comment}\n')
