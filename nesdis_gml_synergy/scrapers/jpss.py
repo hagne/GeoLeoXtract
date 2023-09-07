@@ -281,11 +281,16 @@ class JPSSSraper(object):
                     if not isinstance(self.reporter, type(None)):
                         if proc.exitcode == 0:
                             self.reporter.clean_increment()
-                        elif proc.exitcode == -15: #process was killed due to timeout. I had that as -9 before, double check if both exit codes are possible?
+                        elif proc.exitcode == -15: #process was killed due to timeout. 
+                            self.reporter.errors_increment()
+                        elif proc.exitcode == -9: #process was killed externally, e.g. by the out of memory killer, or someone killed it by hand? 
                             self.reporter.errors_increment()
                         elif proc.exitcode == 1: #process generated an exception that should be rison further down
                             self.reporter.errors_increment()
                         else:
+                            if not error_queue.empty():
+                                e = error_queue.get()
+                                raise(e)
                             assert(False), f'exitcode is {proc.exitcode}. What does that mean?'
                     #### TODO: Test what the result of this process was. If it resulted in an error, make sure you know the error or stopp the entire process!!!
                 print('.', end = '')
