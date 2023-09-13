@@ -860,6 +860,8 @@ class AwsQuery(object):
                         error += 1
                     else:
                         print("THIS SHOULD STOP EVERYTHING!!")
+                        print(type(e))
+                        print(str(e))
                         raise(e)   
                         
                 datetime = _pd.Timestamp.now()
