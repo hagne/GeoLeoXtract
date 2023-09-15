@@ -431,6 +431,14 @@ class AwsQuery(object):
         afdf.index = afdf.scanstart
         afdf.sort_index(inplace=True)
         afdf['scanncenter'] = ((afdf.scanend - afdf.scanstart)/2) + afdf.scanstart
+
+        self.tp_afdf = afdf
+        
+        #### if multiple version exist use only the newest!
+        afdf['version'] = afdf.apply(lambda row: row.p2faws.split('/')[-1].split('_')[1], axis = 1)
+        afdf.index.name = 'index'
+        afdf = afdf.sort_values(['scanstart', 'version'])
+        afdf = afdf[~ afdf.index.duplicated(keep = 'last')]
         
         # get the two closest to overpass
         closest = (afdf.scanncenter - srow.overpass_datetime).abs().sort_values().iloc[:2]
@@ -440,11 +448,32 @@ class AwsQuery(object):
         closest_start = afdf.loc[closest.index[0]].scanstart
         clodest_interval = (closest_end - closest_start)/_pd.to_timedelta(1, 'minutes')
         download_df = afdf.loc[closest.index].p2faws.copy()
+        if download_df.shape[0] > 2: #duplicates exist, probably due to different versions. the following will use only the newest version
+            assert(False), 'this should no longer be an issue?!?'
+            download_df = _pd.DataFrame(download_df)
+            download_df['version'] = download_df.apply(lambda row: row.p2faws.split('/')[-1].split('_')[1], axis = 1)
+            download_df = download_df.sort_values(['scanstart', 'version'])
+            download_df = download_df[~ download_df.index.duplicated(keep = 'last')].p2faws
+            clodest_interval = float(_np.unique(clodest_interval)) #remove multiple values
+            closest_end = _pd.to_datetime(_np.unique(closest_end)[0])
+            closest_start = _pd.to_datetime(_np.unique(closest_start)[0])
+            
+        self.tp_download_df = download_df
+        self.tp_clodest_interval = clodest_interval
+        self.tp_srow = srow
+        self.tp_closest_end = closest_end
+        self.tp_closest_start = closest_start
         if raise_error:
             assert(clodest_interval < 3), f'Interval to large. 2 files with NOAA 20 cover ~ 3 minutes. The ones that are the closest have a interval of {clodest_interval:0.1f} minutes. This probably means there is a data gap, like at night?'
             assert(clodest_interval > 2), f'Interval to small. 2 files with NOAA 20 cover ~ 3 minutes. The ones that are the closest have a interval of {clodest_interval:0.1f} minutes. This probably means the files are almoste empty, like at night?\n{download_df}'
             assert(closest_start < srow.overpass_datetime < closest_end), f'This happens if the file is right on the edge of the day. If it causes problems, fix it, Consider previous and next day.\not={srow.overpass_datetime}\nst={closest_start}\net={closest_end}'
         else:
+            # print(f'closeest interval: {clodest_interval}')
+            # print(type(clodest_interval))
+            # print(download_df)
+            # for idx,row in download_df.items():
+            #     print(row.split('/')[-1])
+    
             if not (clodest_interval < 3) or not (clodest_interval > 2) or not (closest_start < srow.overpass_datetime < closest_end):
                 # download_aws = download_df.p2faws.copy()
                 download_df[:] = _np.nan
@@ -453,8 +482,12 @@ class AwsQuery(object):
         # details fo files to download
     
         # download_df['path2file_local'] = download_df.apply(lambda row: self.path2folder_local.joinpath(pl.Path(row.p2faws).name), axis = 1)
-    
-        return download_df.values    
+        # print(download_df.values)
+        out = download_df.values
+        if out.shape == (1,):
+            out = _np.append(out, _np.nan)
+        self.tp_out = out
+        return out   
     
     
     
@@ -540,7 +573,14 @@ class AwsQuery(object):
                         scanned = _pd.concat([scanned, opsel])
                         
                 scanned['site'] = site.abb
-                scanned[['path2file_aws1','path2file_aws2']] = scanned.apply(self._overpasstime2filesincloud, axis = 1, result_type='expand')
+                try:
+                    scanned[['path2file_aws1','path2file_aws2']] = scanned.apply(self._overpasstime2filesincloud, axis = 1, result_type='expand')
+                except Exception as e:
+                    print(scanned)
+                    print(self._overpasstime2filesincloud(scanned.iloc[0]))
+                    print(self._overpasstime2filesincloud(scanned.iloc[1]))
+                    raise(e)
+                    
                 scanned.dropna(inplace=True)
                 scanned.index = scanned.overpass_datetime
                 scanned.drop('overpass_datetime', axis=1, inplace=True)

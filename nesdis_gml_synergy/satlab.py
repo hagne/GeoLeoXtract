@@ -60,6 +60,7 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
                 ds = _xr.concat(dslist, dim = 'Rows')
             else:      
                 ds = _xr.open_dataset(p2f)
+                p2f = [_pl.Path(p2f),]
         except ValueError as err:
             if not bypass_time_unit_error:
                 raise
@@ -89,7 +90,7 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
         return classinst
 
     #### VIRRS products
-    if 'AEROSOL_AOD_EN' in product_name:
+    if product_name in ['AEROSOL_AOD_EN', 'JRR-AOD']:
         pv = _np.unique([float(p.name.split('_')[1][slice(1,4,2)])/10 for p in p2f])
         assert(len(pv) == 1), f'version of files is different ({pv})'
         pv = pv[0]
@@ -2324,7 +2325,7 @@ class JRR_AOD(GeosSatteliteProducts):
         super().__init__(*args, **kwargs)
         # self.valid_qf = [0,1]
         
-        if self.product_info['version'] in [3.0,]:
+        if self.product_info['version'] in [3.0,2.3]:
             
             global_qf = [{'high':   [0], 
                           'medium': [1],
@@ -2343,7 +2344,7 @@ class JRR_AOD(GeosSatteliteProducts):
         #                                     global_qf= global_qf, 
         #                                    )
         else:
-            raise GoesExceptionVerionNotRecognized(self)
+            raise GoesExceptionVerionNotRecognized(self, message = f"Version {self.product_info['version']} not recognized.")
 
 
 ############################################

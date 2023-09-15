@@ -42,6 +42,7 @@ ABI_product_info = {'ABI-L1b-Rad': 'Radiances',
                  'ABI-L2-VAA': 'Volcanic Ash: Detection and Height'}
 
 VIIRS_product_info = {'AEROSOL_AOD_EN': 'AOD',
+                      'JRR-AOD':'AOD'
                       }
 
 satellite_list = [dict(names = ['NOAA 20', 'NOAA_20', 'NOAA20'], 
