@@ -2325,7 +2325,7 @@ class JRR_AOD(GeosSatteliteProducts):
         super().__init__(*args, **kwargs)
         # self.valid_qf = [0,1]
         
-        if self.product_info['version'] in [3.0,2.3]:
+        if self.product_info['version'] in [3.0,2.3, 3.2]:
             
             global_qf = [{'high':   [0], 
                           'medium': [1],
@@ -2344,7 +2344,7 @@ class JRR_AOD(GeosSatteliteProducts):
         #                                     global_qf= global_qf, 
         #                                    )
         else:
-            raise GoesExceptionVerionNotRecognized(self, message = f"Version {self.product_info['version']} not recognized.")
+            raise GoesExceptionVerionNotRecognized(message = f"Version {self.product_info['version']} not recognized.")
 
 
 ############################################
