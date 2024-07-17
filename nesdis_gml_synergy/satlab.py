@@ -448,6 +448,7 @@ class Concatonator(object):
             
             self._workplan = workplan
             
+            
         return self._workplan
     
     @workplan.setter
@@ -495,8 +496,8 @@ class Concatonator(object):
         with concurrent.futures.ProcessPoolExecutor(max_workers=num_cpus) as executor:
             futures = []
             for date, date_group in self.workplan.groupby('date'):
-                if date == self.workplan.iloc[-1].date:
-                    break
+                # if date == self.workplan.iloc[-1].date:
+                #     break
                 futures.append(executor.submit(process_date, date_group, date, verbose, save, test))
                 
                 if test:
