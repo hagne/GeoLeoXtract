@@ -462,6 +462,9 @@ if __name__ == '__main__':
         if concatenate:
             concat_rule = config['concatenate']['concatenate'].strip()
             concat_skip_last = 'skip_last' in  config['concatenate'].keys()
+        # print('test')
+        # print(concat_rule)
+        # print(concat_skip_last)
         
     else: 
         start = args.start
@@ -572,7 +575,7 @@ if __name__ == '__main__':
             print('-------')
             for product in products:
                 for satellite in satellites:
-                    path2processed_filled = pl.Path(path2processed.format(satellite = satellite, product = product))
+                    path2processed_filled = pl.Path(path2processed.format(satellite = satellite, product = product, version = version))
                     path2concat_files = path2processed_filled.parent.joinpath(path2processed_filled.name + '_concat')
                     datetime_format = file_prefix.format(product = product)+'_%Y%m%d_%H%M%S.nc'
                     cc = ngs.Concatonator(path2scraped_files=path2processed_filled,
