@@ -4,3 +4,7 @@ install dependencies
 
 ```conda env update --file conda_dependencies.yml```
 
+install GeoLeoXtract
+
+```pip install .```
+

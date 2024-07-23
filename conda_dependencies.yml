@@ -8,7 +8,9 @@ dependencies:
 - numba
 # data
 - xarray
-- netcdf4
+- h5netcdf
+#- netcdf4 
+- s3fs
 # - dask
 # - statsmodels
 # hysplit
