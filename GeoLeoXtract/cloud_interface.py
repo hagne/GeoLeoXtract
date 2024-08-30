@@ -16,7 +16,9 @@ Known issues:
 # -*- coding: utf-8 -*-
 import pathlib as _pl
 import pandas as _pd
-import s3fs as _s3fs
+# import s3fs as _s3fs
+from .opt_imports import s3fs as _s3fs
+
 # import urllib as _urllib
 # import html2text as _html2text
 import psutil as _psutil
@@ -394,24 +396,47 @@ class AwsQuery(object):
         self._overpassplan = None
         self._verbose = verbose
     
-    def _overpasstime2filesincloud(self, row, raise_error = False):
+    def _overpasstime2filesincloud(self, row, raise_error = False, verbose = False):
+        if verbose:
+            print('---------------------------------')
+            print('_overpasstime2filesincloud')
+            print('--------------------------')
+            print(row)
+            
         srow = row
         
         #### get files on aws for each overpass
         ### match product names to the product accronyme (sometime, like in case of AOD there are multiple possibilities
         sattt = self.satellite.replace(" ","")
-        products_leo = [dict(abb = 'aod', full_names = ['Aerosol_Optical_Depth_EDR', 'Aerosol_Optical_Depth_EDR_Reprocessed'])]
-        
+        # bucket_base = 'noaa-jpss' # old, this bucket still exists but is only for development
+        if sattt.lower() == 'noaa20':
+            bucket_base = 'noaa-nesdis-n20-pds'
+        else:
+            assert(False), f'satellite {sattt} not known'
+        products_leo = [#dict(abb = 'aod', full_names = ['Aerosol_Optical_Depth_EDR', 'Aerosol_Optical_Depth_EDR_Reprocessed']),
+                        dict(abb = 'aod', full_names = ['VIIRS-JRR-ADP',])]
         full_names = [p for p in products_leo if p['abb'] == self.product.lower()][0]['full_names']
+
+        if verbose and 0:
+            print(f'full_name (of products): {full_names}. This should not be empty ... if it would you would have gotten an error message already')
         # full_names
         # fn = full_names[0]
         
         ### get all files 
         afiles = []
+        searched_awspaths = []
         # If there are multiple names only one should actually have files in them
         for fn in full_names:
-            ponaws = f'noaa-jpss/{sattt}/{self.sensor}/{sattt}_{self.sensor}_{fn}/{row.overpass_datetime.year}/{row.overpass_datetime.month:02d}/{row.overpass_datetime.day:02d}/*'
-            afiles += self.aws.glob(ponaws)
+            ponaws = f'{bucket_base}/{fn}/{row.overpass_datetime.year}/{row.overpass_datetime.month:02d}/{row.overpass_datetime.day:02d}/*'
+            searched_awspaths.append(ponaws)
+            awsglob = self.aws.glob(ponaws)
+            if verbose and 0:
+                print(f'files found at: {ponaws}')
+                print(awsglob)
+            afiles += awsglob
+
+        assert(len(afiles) > 0), f'No files found. Searched at {searched_awspaths}'
+
         # afiles
         
         afdf = _pd.DataFrame(afiles, columns=['p2faws'])
@@ -427,7 +452,16 @@ class AwsQuery(object):
             return times
         
         # get scan start, end, and center from file name and set start as index.
-        afdf[['scanstart', 'scanend']] = afdf.apply(fn2times, axis = 1, result_type='expand')
+        scanstartend = afdf.apply(fn2times, axis = 1, result_type='expand')
+        if verbose and 0:
+            print('scanstartend')
+            print(scanstartend)
+            print('end - scanstartend')
+            print(afdf)
+            print('end - adf')
+            
+        self.tp_scanstartend = scanstartend
+        afdf[['scanstart', 'scanend']] = scanstartend
         afdf.index = afdf.scanstart
         afdf.sort_index(inplace=True)
         afdf['scanncenter'] = ((afdf.scanend - afdf.scanstart)/2) + afdf.scanstart

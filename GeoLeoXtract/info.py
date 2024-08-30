@@ -45,6 +45,8 @@ VIIRS_product_info = {'AEROSOL_AOD_EN': 'AOD',
                       'JRR-AOD':'AOD'
                       }
 
+MODIS_product_info = {'MCD19A2': 'AOD'}
+
 satellite_list = [dict(names = ['NOAA 20', 'NOAA_20', 'NOAA20'], 
                        type_of_orbit = 'leo'),
                   dict(names = ['GOES 16', 'G16',], 

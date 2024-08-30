@@ -13,9 +13,9 @@ Known issues:
         takes the two closest scannes in that direction.
 """
 
-import nesdis_gml_synergy.satlab as ngs
+import GeoLeoXtract.satlab as ngs
 # import nesdis_gml_synergy.info as ngsinf
-import nesdis_gml_synergy.cloud_interface as ngsci
+import GeoLeoXtract.cloud_interface as ngsci
 # import nesdis_aws
 
 import multiprocessing
@@ -30,6 +30,7 @@ import pandas as _pd
 import xarray as _xr
 
 class JPSSSraper(object):
+    """designed to scrape from the AWS buckets"""
     def __init__(self, 
                  start = '20200822 00:00:00', end = '20200828 00:00:00', 
                  sites = {'lon': -105.2705, 'lat': 40.015, 'alt': 1500, 'abb': 'bld'},
