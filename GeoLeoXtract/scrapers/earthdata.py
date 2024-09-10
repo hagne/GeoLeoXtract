@@ -324,7 +324,7 @@ class CMRSraper(object):
                         print(f'downloading {url}\nto{path2save}')
                     try:
                         glx.scrapers.earthdata.download_url(url, path2save)
-                    except HTTPError as e:
+                    except requests.HTTPError as e:
                         if skip_http_error:
                             print('HTTPE', end = ' ')
                             continue
