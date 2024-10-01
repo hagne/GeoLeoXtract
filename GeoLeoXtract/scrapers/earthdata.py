@@ -172,39 +172,11 @@ class CMRSraper(object):
             self._workplan = workplan
         return self._workplan 
     
-    def old_delet_download_and_overpasses(self, date, sites):
-        verbose = self.verbose
-        verbose = True
-        if verbose:
-            print('fct call - download_and_overpasses', end = ' ... ')
-            print(f'sites = {sites}')
-        end = date + _pd.to_timedelta(0.9999999, 'd') # just under 1 will garantie that we stay in the same day
-        # end = date + _pd.to_timedelta(1, 'd') # just under 1 will garantie that we stay in the same day
-        print(date)
-        print(end)
-        # print(type(date))
-        # print(type(end))
-        query = ngsci.AwsQuery(path2folder_local='/export/htelg/tmp/',
-                                    satellite=self.satellite,
-                                    sensor = self.sensor,
-                                    product= self.product,
-                                    # scan_sector=None,
-                                    # start='2022-11-13 12:00:00',
-                                    # end='2022-11-14 13:00:00',
-                                    start=date,
-                                    end=end,
-                                    site = sites
-                                   )
-        query.aws.clear_instance_cache()
-        if query.workplan.shape[0] != 0:
-            if verbose:
-                print(f'Downloading {query.workplan.shape[0]} files', end = ' ... ')
-            query.download()
-        if verbose:
-            print('done!')
-        return query
+    @workplan.setter
+    def workplan(self,value):
+        self._workplan = value
+        return
     
-    ## work it up by site (typically there is only one overpass, non the less)
     def process_single_day(self, daygroup, 
                            error_queue = None, 
                            save = True,
@@ -287,6 +259,20 @@ class CMRSraper(object):
                 # return df, site
                 self.tp_df_pgc = df.copy()
                 self.tp_site = site
+
+
+
+                
+                # print('test baadslkdejs')
+                # print(sdf)
+                # print(sdf.index)
+                # print(df)
+                # assert(False), 'haaaaalt'
+
+
+
+
+                
                 df = df.where(df.granule == site.earthdata_granule).dropna()
                 self.tp_df_agc = df.copy()
                 
@@ -300,7 +286,15 @@ class CMRSraper(object):
 
                 if df.shape[0] > 1: #_np.all(df.groupby('name').count() > 1):
                     self.tp_df_multifiletest = df.copy()
+
+
+                    
+                    # print('test baadslkdejs')
+                    # print(df)
+                    # print(_np.all(df.groupby('name')))
+                    
                     assert(_np.all(df.groupby('name').count() > 1)),'if there are mulitple files left, they at least should have the same name but differetn update dates. So this error is unexpected.'
+
                     if skip_multiple_file_on_server_error:
                         print('MFOSE', end = ' ')
                         df= df.sort_values('updated', ascending = False).iloc[[0,]]
@@ -488,6 +482,7 @@ class CMRSraper(object):
             else:
                 try:
                     arg = next(iterator)
+                    # print(arg)
                 except StopIteration:
                     # print('reached last number')
                     if len(processes) == 0:

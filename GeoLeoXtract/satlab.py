@@ -2746,7 +2746,7 @@ class EOS_AOD(GeosSatteliteProducts):
         super().__init__(*args, **kwargs)
         # self.valid_qf = [0,1]
         
-        if self.product_info['version'] in ['6.1.20','6.1.21','6.1.22','6.1.23','6.1.24',]:
+        if self.product_info['version'] in ['6.1.19', '6.1.20','6.1.21','6.1.22','6.1.23','6.1.24',]:
             
             global_qf = [{'high':   [0], 
                           # 'medium': [1],

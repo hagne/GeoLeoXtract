@@ -22,6 +22,7 @@ write_to = "_version.py"  # Path to write the version file
 
 [project.scripts]
 goesscraper = "GeoLeoXtract.scripts.goesscraper:main"
+cmrscraper = "GeoLeoXtract.scripts.cmrscraper:main"
 # jpssscraper
 # produce_aod2netcdf = "surfradpy.scripts.aod2netcdf:run"
 # qcrad2ncei = "surfradpy.scripts.qcrad2ncei:main"
