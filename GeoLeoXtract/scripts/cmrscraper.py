@@ -137,7 +137,8 @@ def main():
         reverse = 'reverse' in config['workplan'].keys()
         path2processed =  config['file_io']['path2processed']
         file_prefix =  config['file_io']['file_prefix']
-        reporter_name = f'cmrscraper_{args.init}'
+        initfn = pl.Path(args.init)
+        reporter_name = f'cmrscraper_{initfn.name}'
         reporter_name = reporter_name.replace('.ini', '')
         sites = None
         network = None
