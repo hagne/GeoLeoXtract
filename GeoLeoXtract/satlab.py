@@ -1422,7 +1422,7 @@ class GeosSatteliteProducts(object):
                 y = self.ds['y'][:] * sat_h
     
                 # Create a pyproj geostationary map object to be able to convert to what ever projecton is required
-                p = _Proj(proj='geos', h=sat_h, lon_0=sat_lon, sweep=sat_sweep)
+                p = _pyproj.Proj(proj='geos', h=sat_h, lon_0=sat_lon, sweep=sat_sweep)
     
                 # Perform cartographic transformation. That is, convert image projection coordinates (x and y)
                 # to latitude and longitude values.
@@ -1456,7 +1456,8 @@ class GeosSatteliteProducts(object):
 
     
     def project_on_shape(self, shape):
-        """This will limite the data to that inside a shape. Note, execution
+        """        
+        This will limite the data to that inside a shape. Note, execution
         can take a while.
         
         Parameters
@@ -2798,8 +2799,9 @@ class JRR_AOD(GeosSatteliteProducts):
 
 ############################################
 #### specialized function ... probably of limited usefullness for the average user    
-def projection_function(row, stations, test = False, verbose = False):
-    """
+### These are (should be) no longer in use ... please use function defined in the product folder
+def deprecated_projection_function(row, stations, test = False, verbose = False):
+    """deprecated 2024-10  
     This function is used for on the fly processing (projection to site) for the nedis_aws package.
     The function allows for projection while downloading and subsequent discarding 
     of satellite data 
@@ -2867,7 +2869,8 @@ def projection_function(row, stations, test = False, verbose = False):
     
     return 
 
-def projection_function_multi(row, error_queue, stations = None, verbose = True):
+def deprecated_projection_function_multi(row, error_queue, stations = None, verbose = True):
+    """deprecated 2024-10  """
     try:
         # if verbose:
         #     print('projection_function_multi')
@@ -2913,8 +2916,8 @@ def projection_function_multi(row, error_queue, stations = None, verbose = True)
         error_queue.put(e)#traceback.format_exc())
     return
 
-def projection_function_test(row, stations):
-    """
+def deprecated_projection_function_test(row, stations):
+    """ deprecated 2024-10   
     This function is used for on the fly processing (projection to site) for the nedis_aws package.
     The function allows for projection while downloading and subsequent discarding 
     of satellite data 

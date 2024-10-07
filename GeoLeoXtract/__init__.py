@@ -17,6 +17,8 @@ from . import satlab
 from . import cloud_interface
 from . import satscraper
 from . import scrapers
+from . import products
+from . import processing
 
 # from . import config as _config
 
