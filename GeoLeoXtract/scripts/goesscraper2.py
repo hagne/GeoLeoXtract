@@ -271,7 +271,7 @@ def main():
     else:
         reporter = prolab.Reporter(reporter_name, 
                                    log_folder='/home/grad/htelg/.processlogs', 
-                                   reporting_frequency=(1,'h'))
+                                   reporting_frequency=(6,'h'))
         for product in products:
             for satellite in satellites:
                 #### execute generic
