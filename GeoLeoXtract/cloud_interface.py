@@ -759,6 +759,7 @@ class AwsQuery(object):
             DESCRIPTION.
 
         """
+        out = None
         if isinstance(alternative_workplan, _pd.DataFrame):
             workplan = alternative_workplan
         else:

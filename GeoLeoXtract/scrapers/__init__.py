@@ -7,4 +7,5 @@ Created on Thu Aug 17 16:38:22 2023
 """
 from . import earthdata
 from . import jpss
+from . import goes
 
