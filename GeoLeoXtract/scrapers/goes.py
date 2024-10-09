@@ -78,7 +78,7 @@ class GOESScraper(object):
         cend = cstart + _pd.to_timedelta(1,self.frequency)
         
         try:
-            query = _glx.cloud_interface.AwsQuery(path2folder_local='/home/grad/htelg/tmp',
+            query = _glx.cloud_interface.AwsQuery(path2folder_local=self.p2fld_tmp,
                                   satellite= self.satellite, #16,
                                   product=self.product.replace('_', '-'),
                                   scan_sector='C',

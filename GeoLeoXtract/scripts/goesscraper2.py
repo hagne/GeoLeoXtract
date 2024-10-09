@@ -198,7 +198,8 @@ def main():
         path2tmp = config['file_io']['path2tmp']
         # file_prefix =  config['file_io']['file_prefix']
         filenameformat =  config['file_io']['filenameformat']
-        reporter_name = f'goesscraper_{args.init}'
+        reporter_name = pl.Path(args.init).name
+        reporter_name = f'goesscraper_{reporter_name}'
         reporter_name = reporter_name.replace('.ini', '')
         
         sites = None
