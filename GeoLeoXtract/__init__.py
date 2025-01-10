@@ -19,6 +19,7 @@ from . import satscraper
 from . import scrapers
 from . import products
 from . import processing
+from . import file_io_hrrr
 
 # from . import config as _config
 

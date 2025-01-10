@@ -69,7 +69,37 @@ class GOESScraper(object):
                              error_queue = None,
                              verbose = False, 
                              surpress_warnings = True,
+                             what2return = 'None',
                             ):
+        """
+        
+
+        Parameters
+        ----------
+        row : TYPE
+            DESCRIPTION.
+        error_queue : TYPE, optional
+            DESCRIPTION. The default is None.
+        verbose : TYPE, optional
+            DESCRIPTION. The default is False.
+        surpress_warnings : TYPE, optional
+            DESCRIPTION. The default is True.
+        what2return : str, optional
+            For testing and bugfixing. The default is None.
+            query: will return the query, which handles downloading, etc. This will happen before download is initiated!
+
+        Raises
+        ------
+        
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        what2return_opts = ['query', 'None']
+        assert(what2return in what2return_opts), f'Value error for what2return. Is "{what2return}, should be in {what2return_opts}."'
         
         if surpress_warnings:        
             _warnings.filterwarnings('ignore')
@@ -87,6 +117,10 @@ class GOESScraper(object):
                                   # process=None,
                                   overwrite=True,
                                 )            
+            
+            if what2return == 'query':
+                return query
+            
             query.download()
             
             # generate the path with the projected files

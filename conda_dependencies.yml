@@ -1,24 +1,17 @@
 channels:
 - conda-forge
 dependencies:
-#- python=3.8
-# mapping
-- basemap
-- basemap-data-hires
+- python-magic
+- pyproj
+- matplotlib
 - numba
-# data
 - xarray
-- h5netcdf
-#- netcdf4 
+- netcdf4 
 - s3fs
-# - dask
-# - statsmodels
-# hysplit
-#- geopy
-# atmpy
-# - timezonefinder
-# - ephem
-# - python-pptx
-# - pysolar
-#satellite retrievals
-# - pyquery
+# optional
+- geopandas
+- shapely
+- cartopy
+- pyhdf
+- pygrib #required for hrrr files
+
