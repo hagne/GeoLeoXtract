@@ -24,6 +24,7 @@ from numba import vectorize, int8, float32
 # import s3fs as _s3fs
 import concurrent.futures
 import GeoLeoXtract.info as ngsinf
+import GeoLeoXtract.nasa_tempo as glxtempo
 
 ### optional imports
 from .opt_imports import geopandas as _gpd
@@ -78,7 +79,17 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
             else:
                 ftype = _magic.detect_from_filename(p2f).name
                 if ftype == 'Hierarchical Data Format (version 5) data':
-                    ds = _xr.open_dataset(p2f)
+                    with _xr.open_dataset(p2f) as ds:
+                        project = None
+                        if 'project' in ds.attrs:
+                            project = ds.attrs['project'].lower()
+                    if project == 'tempo':
+                        si = glxtempo.open(p2f)
+                        if verbose:
+                            print('NASA Tempo file detected')
+                        return si
+                    else:
+                        ds = _xr.open_dataset(p2f)
             
                 elif ftype == 'Hierarchical Data Format (version 4) data':
                     if isinstance(p2f, _pl.Path):
