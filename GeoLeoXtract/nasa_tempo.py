@@ -21,7 +21,9 @@ def open(p2f):
     
     ds = ds.rename_dims({'mirror_step': 'x', 'xtrack': 'y'})
     ds = ds.assign_coords(time = ds.time, longitude = ds.longitude, latitude = ds.latitude)
-    ds = ds.rename_vars({'latitude': 'lat', 'longitude': 'lon', 'dqf': 'DQF'})
+    ds = ds.rename_vars({'latitude': 'lat', 'longitude': 'lon', 'dqf': 'DQF', 
+                         'time': 'overpass_time',
+                         })
 
     ds.attrs = dsbase.attrs
     ds.attrs

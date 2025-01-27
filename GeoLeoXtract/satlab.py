@@ -1391,11 +1391,37 @@ class Grid2SiteProjection(object):
         self._distance_grids =  None
         self._projection2poin = None
         self._projection2area = None
+        self._overpass_t = None
     
+    @property
+    def overpass_times(self):
+        """
+        Currently only tested on tempo data. Designed fo scanned data, which 
+        provides an additional time coordinate which only depends on one of the 
+        dimensions (x or y). This coordinate has to be called overpass_time
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
+        if isinstance(self._overpass_t, type(None)):
+            overpass_times = []
+            for e,(idx, rowsmt) in enumerate(self.closest_grid_points.iterrows()):  
+                opt = self.grid.ds.overpass_time.isel(x = int(rowsmt.argmin_y)).compute()
+                opt = opt.reset_coords('overpass_time')
+                opt = opt.expand_dims({'site':  [rowsmt.name]})
+                overpass_times.append(opt)
+        
+            self._overpass_t = _xr.concat(overpass_times, 'site')
+        return self._overpass_t
+            
     @property
     def projection2point(self):
         if isinstance(self._projection2poin, type(None)):
             if self.grid.grid_type in  ['scan_angle', 'lonlatmesh']:
+                ## Todo: This x and y is the oposite than armin_x and argmin_y. This is asking for errors!!!!
                 coord1, coord2 = 'x', 'y'
             elif self.grid.grid_type in  ['lonlat', ]:
                 coord1, coord2 = 'lon', 'lat'
@@ -1406,7 +1432,6 @@ class Grid2SiteProjection(object):
             ds = self.grid.ds[var_sel]
             
             # cleanup the the coordinates
-            
             coords2del = list(ds.coords)
             
             try:
