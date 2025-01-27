@@ -20,7 +20,7 @@ from . import scrapers
 from . import products
 from . import processing
 
-from .satlab import open_file
+from .file_io import open_file
 # from . import config as _config
 
 # config = _config.load_config()
