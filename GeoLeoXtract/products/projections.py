@@ -4,6 +4,7 @@ This is a collection of functions that help unify data products
 
 import pandas as _pd
 import GeoLeoXtract as _glx
+from .. import file_io
 
 def project_statellite2stations_v01(path2file_in, stations, path2file_out = None, test = False, verbose = False):
     """
@@ -15,6 +16,9 @@ def project_statellite2stations_v01(path2file_in, stations, path2file_out = None
         DESCRIPTION.
     stations : TYPE
         DESCRIPTION.
+    path2file_out: 
+        Path to save netcdf. If None noting is saved, but dataset is still 
+        returned.
 
     Returns
     -------
@@ -23,7 +27,7 @@ def project_statellite2stations_v01(path2file_in, stations, path2file_out = None
     """
 
     # read the file
-    ngsinst = _glx.satlab.open_file(path2file_in)
+    ngsinst = file_io.open_file(path2file_in)
     
     # project to stations
     projection = ngsinst.project_on_sites(stations)
