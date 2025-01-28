@@ -1,4 +1,3 @@
-import GeoLeoXtract as glx
 import xarray as _xr
 import pathlib as _pl
 import numpy as _np
@@ -34,14 +33,11 @@ from .opt_imports import Basemap as _Basemap
 from .opt_imports import s3fs as _s3fs
 from .opt_imports import pyhdf as _pyhdf
 
-
 import gc
 
 
 def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, extent = None ,verbose = False):
     """
-    TODO: This should be moved to file_io!!!
-    
     Open a satellite data file. Probably only works for GOES
 
     Parameters
@@ -101,19 +97,6 @@ def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, ex
                         gc.collect()
                         
                         return si
-                elif ftype == 'Gridded binary (GRIB) version 2':
-                    if p2f.name.split('.')[0] == 'hrrr':
-                        if verbose:
-                            print(f'Detected a HRRR file')
-                            
-                            ds = glx.file_io_hrrr.open_grib_file(p2f, 
-                                     raise_error_when_varible_missing = False,
-                                     verbose = True
-                                    )
-                    else:
-                        raise ValueError('Could not tell what type of grib file this is')
-                else:
-                    raise ValueError(f'File is of unknown format: {ftype}')
 
                 p2f = [_pl.Path(p2f),]
         except ValueError as err:
@@ -1222,7 +1205,7 @@ class GeosSatteliteProducts(object):
             ds = file
         else:
             assert(False), 'DEPRECATED! Use open_file!'
-            
+            ds = _xr.open_dataset(file)
         # different products give different identifies. Also the case varies, thats why some code looks convoluted
         if 'dataset_name' in ds.attrs.keys(): 
             long_name = ds.attrs['dataset_name']
@@ -1232,7 +1215,6 @@ class GeosSatteliteProducts(object):
                 product_name = long_name
         elif 'title'in [k.lower() for k in ds.attrs.keys()]:    
             product_name = long_name = ds.attrs[list(ds.attrs.keys())[[k.lower() for k in ds.attrs.keys()].index('title')]]
-            
         else:
             assert(False), f'neither dataset_name nor title in attr keys. Options are: {ds.attrs.keys()}'
         self.long_name = long_name
@@ -1256,11 +1238,7 @@ class GeosSatteliteProducts(object):
                 else:
                     prin['version'] = product_version
             self.product_info = prin
-        elif product_name == 'HRRR':
-            self.product_info = dict(version = 0, # no idea where to find the version in the grib file ... there is table version ... might be helpful
-                                     )
         else:
-            print(f'sss product_name: {product_name}')
             tl = ['sensor', 'level', 'name', 'version']
             self.product_info = {tl[e]:p for e,p in enumerate(product_name.split('-'))}
         
@@ -1344,9 +1322,6 @@ class GeosSatteliteProducts(object):
     
     def get_data_by_quality(self, quality):
         assert(isinstance(quality, list)), 'quality has to be a list of qualities'
-        if self.qf_managment.all_high:
-            assert((len(quality) == 1) and ('high' in quality)), f'Only quality high works for this data, is: {quality}'
-            return self.ds
         # select relevant variablese ... those with x and y
         # var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('y', 'x')]
         
@@ -1389,9 +1364,6 @@ class GeosSatteliteProducts(object):
             # needed if data contains mulitle timestamps, implemented 20240820 for Modis MCD19A2 product
             if 'datetime' in ds.coords:
                 coords2del.remove('datetime')
-            # this is for HRRR, I am not really happy of this defining of exceptions!! Would be nice to find a more generic way to handle additional dimensions
-            # if 'level' in ds.coords:
-            #     coords2del.remove('level')
         else:
             assert(False), f'New product attempt?!? grid_type:{self.grid_type}'
         
@@ -1501,7 +1473,7 @@ class GeosSatteliteProducts(object):
         """
         #### open/check shape    
         if isinstance(shape, str):
-            shape = _pl.Path(shape)
+            shape = pl.Path(shape)
 
         if isinstance(shape, _pl.Path):
             shape = _gpd.read_file(fn)
@@ -1537,53 +1509,7 @@ class GeosSatteliteProducts(object):
                                                  verbose = self._verbose)
         shape_projection.shape = shape
         return shape_projection
-    
-    def project_on_bounding_box(self, extent = None, center_coords = None, bbox_half_width = None):
-        """
-        Parameters
-        ----------
-        extent : array-like, optional
-            Sequence of coordinates [sw_lon, sw_lat, ne_lon, ne_lat] that 
-            describe the south-west corner (sw_lon, sw_lat) and the 
-            north-east corner (be_lon, ne_lat) of a a box,. 
-            The default is None.
-        center_coords : TYPE, optional
-            DESCRIPTION. The default is None.
-        bbox_half_width : TYPE, optional
-            DESCRIPTION. The default is None.
 
-        Returns
-        -------
-        bbox_projection : TYPE
-            DESCRIPTION.
-
-        """
-        assert(not isinstance(extent, type(None)) or not isinstance(center_coords, type(None))), 'Either extent or center_coords need to be set'
-        assert ~(not isinstance(extent, type(None)) and not isinstance(center_coords, type(None))), 'Only one of the kwargs extent and center_coords can be set at a time'
-
-        # assert(~(not isinstance(extent, type(None)) and not isinstance(center_coords, type(None)))) 'Only one of the kwargs extent and center_coords can be set at a time'
-        # assert(not isinstance(extent, type(None)) and not isinstance(center_coords, type(None))) 'Only one of the kwargs extent and center_coords can be set at a time'
-        if not isinstance(extent, type(None)):
-            sw_lon, sw_lat, ne_lon, ne_lat = extent
-        elif not isinstance(center_coords, type(None)):
-            c_lon, c_lat = center_coords
-            if isinstance(bbox_half_width, (_np.ndarray, list, tuple)):
-                dlon, dlat = bbox_half_width
-            else:
-                dlon = dlat = bbox_half_width
-        
-                sw_lon, sw_lat = c_lon - dlon, c_lat - dlat
-                ne_lon, ne_lat = c_lon + dlon, c_lat + dlat
-        
-        ds = self.ds
-        dssub = ds.where((ds.lon > sw_lon) & (ds.lon < ne_lon) & 
-                            (ds.lat > sw_lat) & (ds.lat < ne_lat), 
-                            drop=True
-                            )
-        bbox_projection = GeosSatteliteProducts(dssub, 
-                                                 product_version = self.product_info['version'], 
-                                                 verbose = self._verbose)
-        return bbox_projection
     
     def get_resolution(self, site = [-105.2368, 40.12498]):
         """
@@ -1806,20 +1732,6 @@ def get_dists(lon_lat_grid, lon_lat_sites):
 
 class Grid2SiteProjection(object):
     def __init__(self, grid, sites):
-        """
-
-        Parameters
-        ----------
-        grid : TYPE
-            DESCRIPTION.
-        sites : TYPE
-            DESCRIPTION.
-
-        Returns
-        -------
-        None.
-
-        """
         self.grid = grid
         self.sites = sites
         self.radii = [5,10,25,50,100]
@@ -1828,7 +1740,6 @@ class Grid2SiteProjection(object):
         self._distance_grids =  None
         self._projection2poin = None
         self._projection2area = None
-    
     
     @property
     def projection2point(self):
@@ -1887,61 +1798,60 @@ class Grid2SiteProjection(object):
                 pass
             
             #### assess DQF
-            if not self.grid.qf_managment.all_high:
-                qf_by_variable = self.grid.qf_managment.qf_by_variable
-                variables = list(ds_at_sites.variables)
-    
-                for var in qf_by_variable:
-                    if qf_by_variable[var] == 'ignore':
-                        # variables.pop(variables.index(var))
-                        continue
-                    # add DQF assessed variable and set to nans
-                    varname = f'{var}_DQF_assessed'
-                    dsdqfass= ds_at_sites.DQF.copy()
-                    dsdqfass[:] = _np.nan
+            qf_by_variable = self.grid.qf_managment.qf_by_variable
+            variables = list(ds_at_sites.variables)
+
+            for var in qf_by_variable:
+                if qf_by_variable[var] == 'ignore':
+                    # variables.pop(variables.index(var))
+                    continue
+                # add DQF assessed variable and set to nans
+                varname = f'{var}_DQF_assessed'
+                dsdqfass= ds_at_sites.DQF.copy()
+                dsdqfass[:] = _np.nan
+            
+                # this is just for the reorganization of the variables
+                variables.insert(variables.index(var)+1, varname)
+            
+                # set the assest DQF values
+                self.tp_dsdqfass = dsdqfass
+                self.tp_ds_at_sites = ds_at_sites
+                self.tp_qf_by_variable = qf_by_variable
+                self.tp_var =var
                 
-                    # this is just for the reorganization of the variables
-                    variables.insert(variables.index(var)+1, varname)
+                # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['high'])] = 0
+
+                where = ds_at_sites.DQF.isin(qf_by_variable[var]['high'])
+                dsdqfass = dsdqfass.where(~where, other = 0)
+
+
                 
-                    # set the assest DQF values
-                    self.tp_dsdqfass = dsdqfass
-                    self.tp_ds_at_sites = ds_at_sites
-                    self.tp_qf_by_variable = qf_by_variable
-                    self.tp_var =var
+                if 'medium' in qf_by_variable[var].keys():
+                    # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['medium'])] = 1                
+                    where = ds_at_sites.DQF.isin(qf_by_variable[var]['medium'])
+                    dsdqfass = dsdqfass.where(~where, other = 1)
+                
+                if 'low' in qf_by_variable[var].keys():
+                    # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['low'])] = 2
+                    where = ds_at_sites.DQF.isin(qf_by_variable[var]['low'])
+                    dsdqfass = dsdqfass.where(~where, other = 2)
                     
-                    # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['high'])] = 0
-    
-                    where = ds_at_sites.DQF.isin(qf_by_variable[var]['high'])
-                    dsdqfass = dsdqfass.where(~where, other = 0)
-    
-    
-                    
-                    if 'medium' in qf_by_variable[var].keys():
-                        # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['medium'])] = 1                
-                        where = ds_at_sites.DQF.isin(qf_by_variable[var]['medium'])
-                        dsdqfass = dsdqfass.where(~where, other = 1)
-                    
-                    if 'low' in qf_by_variable[var].keys():
-                        # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['low'])] = 2
-                        where = ds_at_sites.DQF.isin(qf_by_variable[var]['low'])
-                        dsdqfass = dsdqfass.where(~where, other = 2)
-                        
-                    # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])] = 3
-                    where = ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])
-                    dsdqfass = dsdqfass.where(~where, other = 3)
-                    
-                    # add some attributes
-                    dsdqfass.attrs = {}
-                    dsdqfass.attrs['long_name'] = 'Assessed quality flag. This created by the nesdis_gml_synergy package so simplify quality flags.'
-                    dsdqfass.attrs['values'] = [0,1,2,3]
-                    dsdqfass.attrs['meaning'] = '0-high_quality 1-medium_quality 2-low_quality 3-bad'
-                    
-                    # add to dataset
-                    ds_at_sites[varname] = dsdqfass.astype(_np.int8)
+                # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])] = 3
+                where = ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])
+                dsdqfass = dsdqfass.where(~where, other = 3)
+                
+                # add some attributes
+                dsdqfass.attrs = {}
+                dsdqfass.attrs['long_name'] = 'Assessed quality flag. This created by the nesdis_gml_synergy package so simplify quality flags.'
+                dsdqfass.attrs['values'] = [0,1,2,3]
+                dsdqfass.attrs['meaning'] = '0-high_quality 1-medium_quality 2-low_quality 3-bad'
+                
+                # add to dataset
+                ds_at_sites[varname] = dsdqfass.astype(_np.int8)
             
             
-                # reorganize variables for user convenience
-                ds_at_sites = ds_at_sites[variables]
+            # reorganize variables for user convenience
+            ds_at_sites = ds_at_sites[variables]
             
             
             self._projection2poin = ds_at_sites
@@ -2239,14 +2149,8 @@ class Grid2SiteProjection(object):
             # return out
             self.tp_out = (out, dist_array)
             if self.grid.grid_type in  ['scan_angle', 'lonlatmesh']:
-                # if self.grid.ds.title == 'HRRR':
-                #     dims = ['x','y', 'site']
-                # else:
-                dims = ['y','x','site']
-                # print(f'dist_array shape: {dist_array.shape}')
-                # print(f'dims: {dims}')
                 dist_array = _xr.DataArray(data = dist_array,
-                                         dims = dims,
+                                         dims = ['y','x','site'],
                                          coords = {'site': idx,
                                                    'x': self.grid.ds.x,
                                                    'y': self.grid.ds.y}
@@ -2270,7 +2174,7 @@ class Grid2SiteProjection(object):
         return self._closest_points
 
 class QfManagment(object):
-    def __init__(self, satellite_instance, all_high = False, qf_representation = 'as_is', qf_by_variable = None, global_qf = None, number_of_bits = None):
+    def __init__(self, satellite_instance, qf_representation = 'as_is', qf_by_variable = None, global_qf = None, number_of_bits = None):
         """
         
 
@@ -2278,8 +2182,6 @@ class QfManagment(object):
         ----------
         satellite_instance : TYPE
             DESCRIPTION.
-        all_high: bool, optional - default is False
-            All data is of high quality. This is for dataset that do not have any QC, mostly model data
         qf_representation : str, optional
             How the DQF values ought to be represented, "as is" or "binary". The default is 'as_is'.
         qf_by_variable : TYPE, optional
@@ -2294,7 +2196,6 @@ class QfManagment(object):
         None.
 
         """
-        self.all_high = all_high
         self.satellite_instance = satellite_instance
         if qf_representation == 'binary':
             assert(isinstance(number_of_bits, int)), 'If qf_representation is "binary" the number_of_bits kwarg has to be set (integer).'
@@ -2883,36 +2784,6 @@ class JRR_AOD(GeosSatteliteProducts):
             self.qf_managment = QfManagment(self, 
                                             qf_representation='as_is', 
                                             global_qf= global_qf, 
-                                           )
-        # elif self.product_info['version'] in ['M3',]:
-        #     global_qf = [{'high':   [0], 
-        #                   'low': [1],
-        #                   }]
-        #     self.qf_managment = QfManagment(self, 
-        #                                     qf_representation='as_is', 
-        #                                     global_qf= global_qf, 
-        #                                    )
-        else:
-            raise GoesExceptionVerionNotRecognized(message = f"Version {self.product_info['version']} not recognized.")
-
-#################################################
-##### Below are model data products
-
-class HRRR(GeosSatteliteProducts):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # self.valid_qf = [0,1]
-        
-        if self.product_info['version'] in [0,]:
-            
-            # global_qf = [{'high':   [0], 
-            #               # 'medium': [1],
-            #               # 'low':    [2],
-            #               'bad':    [3]}]
-            self.qf_managment = QfManagment(self,
-                                            all_high = True,
-                                            # qf_representation='as_is', 
-                                            # global_qf= global_qf, 
                                            )
         # elif self.product_info['version'] in ['M3',]:
         #     global_qf = [{'high':   [0], 

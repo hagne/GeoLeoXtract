@@ -21,6 +21,7 @@ from . import products
 from . import processing
 from . import file_io_hrrr
 
+from .file_io import open_file
 # from . import config as _config
 
 # config = _config.load_config()
