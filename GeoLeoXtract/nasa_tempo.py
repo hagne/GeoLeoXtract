@@ -58,7 +58,7 @@ class Tempo_AOD_ALH(satlab.GeosSatteliteProducts):
             
     def project_on_sites(self, sites):
         for site in sites: 
-            assert(self.ds.attrs['granule_num'] == site['tempo_granule']), f'grnaual_num in file ({self.ds.attrs['granule_num']}) and tempo_granule of site ({site['tempo_granule']}) disagree.'
+            assert(self.ds.attrs['granule_num'] == site['tempo_granule']), f'grnaual_num in file ({self.ds.attrs["granule_num"]}) and tempo_granule of site ({site["tempo_granule"]}) disagree.'
         return super().project_on_sites(sites)
             
 def project_statellite2stations_v01(path2file_in, stations, path2file_out = None, test = False, verbose = False):
