@@ -13,7 +13,7 @@ Known issues:
 
 import GeoLeoXtract.satlab as ngs
 # import nesdis_gml_synergy.info as ngsinf
-import GeoLeoXtract.cloud_interface as ngsci
+# import GeoLeoXtract.cloud_interface as ngsci
 # import nesdis_aws
 import GeoLeoXtract as glx
 import warnings as _warnings
@@ -26,9 +26,22 @@ import psutil
 import numpy as _np
 import pathlib as _pl
 import pandas as _pd
-import xarray as _xr
+# import xarray as _xr
 
 import requests
+from collections import OrderedDict as odict
+
+
+product_info = [odict(model = 'merra2',
+                      name = 'M2T1NXAER', 
+                      collection_concept_id = 'C1276812830-GES_DISC',
+                      ),
+                odict(satellite = 'TerraAqua',
+                      sensor = 'modis',
+                      name = 'MCD19A2v061',
+                      collection_concept_id = 'C2324689816-LPCLOUD'),
+                ]
+
 
 class GranuleMissmatchError(Exception):
     """Exception raised when a granuel was found that is not the one that is designated for that site."""
@@ -52,7 +65,8 @@ class MultipleFileOnServerError(Exception):
 def search_granules(endpoint = 'https://cmr.earthdata.nasa.gov/search/granules.json',
                     collection_concept_id = 'C2324689816-LPCLOUD',
                     temporal =  '2022-06-02T00:00:00Z,2022-06-02T23:59:59Z',
-                    point =  '-105.2705,40.015'):
+                    point =  '-105.2705,40.015',
+                    verbose = False):
 
 
     params = {
@@ -70,6 +84,8 @@ def search_granules(endpoint = 'https://cmr.earthdata.nasa.gov/search/granules.j
     response = requests.get(endpoint, params=params,
                            )
     data = response.json()
+    if verbose:
+        print(f'Found {len(data['feed']['entry'])} entries. See return["feed"]["entry"] for details')
     return data
 
 
@@ -118,8 +134,11 @@ class CMRSraper(object):
     def __init__(self, 
                  start = '20200822 00:00:00', end = '20200828 00:00:00', 
                  sites = {'lon': -105.2705, 'lat': 40.015, 'alt': 1500, 'abb': 'bld'},
-                 product = 'AOD', satellite = 'TerraAqua', sensor = 'MODIS', 
-                 p2fld_out = '/export/htelg/tmp/', prefix = 'projected2surfrad',
+                 product = 'AOD', 
+                 # satellite = 'TerraAqua', 
+                 # sensor = 'MODIS', 
+                 p2fld_out = '/export/htelg/tmp/', 
+                 prefix = 'projected2surfrad',
                  reporter = None,
                  overwrite = False, 
                  verbose = False):
@@ -127,10 +146,19 @@ class CMRSraper(object):
         self.reporter = reporter
         self.start = start
         self.end = end
-        self.satellite = satellite
+        # self.satellite = satellite
         self.prefix = prefix
-        self.sensor = sensor
+        # self.sensor = sensor
         self.product=product
+        try:
+            self.product_info = [i for i in product_info if i['name'] == product][0]
+        except IndentationError:
+            assert(False), f'product {product} not found in product_info names'
+            
+        pi = self.product_info.copy()
+        pi.pop('collection_concept_id')
+        self.fn_pattern = '_'.join([v for k,v in pi.items()]) + '_' + self.prefix + '_' + '{date}' + '.nc'        
+        
         self.p2fld_out = _pl.Path(p2fld_out)
 
 
@@ -156,10 +184,11 @@ class CMRSraper(object):
         if isinstance(self._workplan, type(None)):
             #Make the workplan
             dates = _pd.DataFrame(index = _pd.date_range(self.start, self.end, freq='d', inclusive = 'left'), columns = ['site',])
-            
+
             for e,site in enumerate(self.sites):
                 dt = dates.copy()
-                dt['p2f_out'] = dt.apply(lambda row: self.p2fld_out.joinpath(f"{self.prefix}_{self.satellite.replace(' ','')}_{self.sensor}_{self.product}_{site.abb}_{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}.nc"), axis = 1).values
+                # dt['p2f_out'] = dt.apply(lambda row: self.p2fld_out.joinpath(f"{self.prefix}_{self.satellite.replace(' ','')}_{self.sensor}_{self.product}_{site.abb}_{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}.nc"), axis = 1).values
+                dt['p2f_out'] = dt.apply(lambda row: self.p2fld_out.joinpath(self.fn_pattern.format(date = f"site_{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}")), axis = 1).values
                 dt['site'] = site.abb
                 if e == 0:
                     workplan = dt
@@ -229,7 +258,7 @@ class CMRSraper(object):
                 point = f'{site.lon},{site.lat}'    
                 if verbose:
                     print('search for granule')
-                data = glx.scrapers.earthdata.search_granules(temporal = temporal, point = point)
+                data = search_granules(temporal = temporal, point = point, collection_concept_id = self.product_info['collection_concept_id'])
                 # return data
                 assert('errors' not in data), f'Errors encountered in the granula search:\n{data["errors"]}'
             
