@@ -85,7 +85,7 @@ def search_granules(endpoint = 'https://cmr.earthdata.nasa.gov/search/granules.j
                            )
     data = response.json()
     if verbose:
-        print(f'Found {len(data['feed']['entry'])} entries. See return["feed"]["entry"] for details')
+        print(f'Found {len(data["feed"]["entry"])} entries. See return["feed"]["entry"] for details')
     return data
 
 
