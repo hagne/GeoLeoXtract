@@ -39,7 +39,9 @@ product_info = [odict(model = 'merra2',
                 odict(satellite = 'TerraAqua',
                       sensor = 'modis',
                       name = 'MCD19A2v061',
-                      collection_concept_id = 'C2324689816-LPCLOUD'),
+                      collection_concept_id = 'C2324689816-LPCLOUD', 
+                      test_granule = 'earthdata_granule',
+                      ),
                 ]
 
 
@@ -129,7 +131,9 @@ def download_url(url, path2save):
     return
 
 
-class CMRSraper(object):
+
+
+class CMRSraperGranule(object):
     """designed to scrape from earthdatas cmr interface"""
     def __init__(self, 
                  start = '20200822 00:00:00', end = '20200828 00:00:00', 
@@ -138,11 +142,13 @@ class CMRSraper(object):
                  # satellite = 'TerraAqua', 
                  # sensor = 'MODIS', 
                  p2fld_out = '/export/htelg/tmp/', 
+                 p2fld_orig = '~/tmp',
                  prefix = 'projected2surfrad',
                  reporter = None,
                  overwrite = False, 
                  verbose = False):
         
+        self.p2fld_orig = _pl.Path(p2fld_orig)
         self.reporter = reporter
         self.start = start
         self.end = end
@@ -155,8 +161,14 @@ class CMRSraper(object):
         except IndentationError:
             assert(False), f'product {product} not found in product_info names'
             
+        # make name pattern, the oder in the dict matters!!
         pi = self.product_info.copy()
         pi.pop('collection_concept_id')
+        try:
+            self.test_granule = pi.pop('test_granule')
+        except:
+            self.test_granule = False
+            
         self.fn_pattern = '_'.join([v for k,v in pi.items()]) + '_' + self.prefix + '_' + '{date}' + '.nc'        
         
         self.p2fld_out = _pl.Path(p2fld_out)
@@ -282,7 +294,7 @@ class CMRSraper(object):
 
                 
                 df['url_download'] = df.apply(lambda row: row.links[0]['href'], axis =1)
-                df['p2out'] = df.apply(lambda row: _pl.Path(f'~/tmp/{row.url_download.split("/")[-1]}').expanduser(), axis = 1)
+                df['p2out'] = df.apply(lambda row: self.p2fld_orig.joinpath(f'{row.url_download.split("/")[-1]}'), axis = 1)
                 df['granule'] = df.apply(lambda row: row.title.split('.')[2], axis = 1)
                 granules = df.granule.copy()
                 # return df, site
@@ -291,36 +303,19 @@ class CMRSraper(object):
 
 
 
-                
-                # print('test baadslkdejs')
-                # print(sdf)
-                # print(sdf.index)
-                # print(df)
-                # assert(False), 'haaaaalt'
-
-
-
-
-                
-                df = df.where(df.granule == site.earthdata_granule).dropna()
-                self.tp_df_agc = df.copy()
-                
-                # assert(df.shape[0] != 0), f'Granules of found files ({granules.values}) do not match the id of the site granuele ({site.earthdata_granule})'
-                if df.shape[0] == 0:
-                    if skip_granule_missmatch_error:
-                        print('GME', end = ' ')
-                        continue
-                    else:
-                        raise GranuleMissmatchError(granules.values, site.earthdata_granule)
+                if self.test_granule:
+                    df = df.where(df.granule == site.earthdata_granule).dropna()
+                    self.tp_df_agc = df.copy()
+                    
+                    if df.shape[0] == 0:
+                        if skip_granule_missmatch_error:
+                            print('GME', end = ' ')
+                            continue
+                        else:
+                            raise GranuleMissmatchError(granules.values, site.earthdata_granule)
 
                 if df.shape[0] > 1: #_np.all(df.groupby('name').count() > 1):
                     self.tp_df_multifiletest = df.copy()
-
-
-                    
-                    # print('test baadslkdejs')
-                    # print(df)
-                    # print(_np.all(df.groupby('name')))
                     
                     assert(_np.all(df.groupby('name').count() > 1)),'if there are mulitple files left, they at least should have the same name but differetn update dates. So this error is unexpected.'
 
@@ -538,3 +533,594 @@ class CMRSraper(object):
             self.reporter.log(overwrite_reporting_frequency=True)
         
         # print("All processes completed.")
+        
+class CMRSraper(object):
+    """designed to scrape from earthdatas cmr interface"""
+    def __init__(self, 
+                 start = '20200822 00:00:00', end = '20200828 00:00:00', 
+                 sites = None, #{'lon': -105.2705, 'lat': 40.015, 'alt': 1500, 'abb': 'bld'},
+                 product = 'AOD', 
+                 # satellite = 'TerraAqua', 
+                 # sensor = 'MODIS', 
+                 # p2fld_out = '/export/htelg/tmp/', 
+                 p2fld_orig = '~/tmp',
+                 prefix = 'projected2surfrad',
+                 reporter = None,
+                 overwrite = False, 
+                 verbose = False):
+        """
+        Downloads the product in the given time window. If the data is tiled 
+        it will only download tiles with sites on them.
+
+        Parameters
+        ----------
+        start : TYPE, optional
+            DESCRIPTION. The default is '20200822 00:00:00'.
+        end : TYPE, optional
+            DESCRIPTION. The default is '20200828 00:00:00'.
+        sites : TYPE, optional
+            This is only needed if the data is tiled or granueled, not if data 
+            covers a fixed box, like conus, or global. Example:
+            {'lon': -105.2705, 'lat': 40.015, 'alt': 1500, 'abb': 'bld'}.
+        product : TYPE, optional
+            DESCRIPTION. The default is 'AOD'.
+        p2fld_out : TYPE, optional
+            DESCRIPTION. The default is '/export/htelg/tmp/'.
+        p2fld_orig : TYPE, optional
+            DESCRIPTION. The default is '~/tmp'.
+        prefix : TYPE, optional
+            DESCRIPTION. The default is 'projected2surfrad'.
+        reporter : TYPE, optional
+            DESCRIPTION. The default is None.
+        overwrite : TYPE, optional
+            DESCRIPTION. The default is False.
+        verbose : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        self.p2fld_orig = _pl.Path(p2fld_orig)
+        self.reporter = reporter
+        self.start = _pd.to_datetime(start)
+        self.end = _pd.to_datetime(end)
+        # self.satellite = satellite
+        self.prefix = prefix
+        # self.sensor = sensor
+        self.product=product
+        try:
+            self.product_info = [i for i in product_info if i['name'] == product][0]
+        except IndentationError:
+            assert(False), f'product {product} not found in product_info names'
+            
+        # make name pattern, the oder in the dict matters!!
+        pi = self.product_info.copy()
+        pi.pop('collection_concept_id')
+        try:
+            self.test_granule = pi.pop('test_granule')
+        except:
+            self.test_granule = False
+            
+        self.fn_pattern = '_'.join([v for k,v in pi.items()]) + '_' + self.prefix + '_' + '{date}' + '.nc'        
+        
+        # self.p2fld_out = _pl.Path(p2fld_out)
+
+
+        if not isinstance(sites, list):
+            sites = [sites,]
+        if isinstance(sites[0], dict):
+            sites = [type('observatory', (), s) for s in sites]
+        self.sites = sites
+        
+        # self.sites = atmsrf.network.stations.list[:3]
+        self.overwrite = overwrite
+        self.verbose = verbose
+        
+        self._workplan = None
+        
+        # for automation
+        self.no_processed_success = self.no_processed_error = self.no_processed_warning = 0
+        self._masterplan = None
+        # self.skip_no_granule_found_error = False
+
+    @property
+    def masterplan(self):
+        if isinstance(self._masterplan, type(None)):
+            temporal = f'{self.start.to_datetime64().astype("datetime64[s]")}Z,{self.end.to_datetime64().astype("datetime64[s]")}Z'    
+    # point = f'{site.lon},{site.lat}'   
+            data = search_granules(temporal = temporal, 
+                                   # point = point, 
+                                   collection_concept_id = self.product_info['collection_concept_id'])
+            entries = data['feed']['entry']
+            # if len(entries) == 0:
+            #     if self.skip_no_granule_found_error:
+            #         print('NGFE', end = ' ')
+            #         continue
+            #     else:
+            #         raise NoGranuleFoundError()
+            df = _pd.DataFrame(entries)
+            df = df.loc[:,['updated', 'links','time_start']]
+            df['url_download'] = df.apply(lambda row: row.links[0]['href'], axis =1)
+            df['p2f_orig'] = df.apply(lambda row: self.p2fld_orig.joinpath(f'{row.url_download.split("/")[-1]}'), axis = 1)
+            df.index = df.apply(lambda row:_pd.to_datetime(row.time_start).tz_localize(None), axis = 1)
+            
+            # df['p2f_out'] = df.apply(lambda row: self.p2fld_out.joinpath('_'.join([self.product, self.prefix, f'{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}']) + '.nc'), axis = 1)
+            self._masterplan = df
+            
+        return self._masterplan
+    
+    @property
+    def workplan(self):
+        wp = self.masterplan[~(self.masterplan.apply(lambda row: row.p2f_orig.is_file(), axis = 1))]
+        wp = wp.loc[:,['url_download', 'p2f_orig']]
+        return wp
+
+    def process(self):
+        for idx, row in self.itemize():
+            self.process_single_item(row)
+        
+    def process_multi(self, max_processes = 2, timeout = 300, sleeptime = 1, 
+                skip_granule_missmatch_error = False,
+                skip_no_granule_found_error = False,
+                skip_http_error = False,
+                skip_multiple_file_on_server_error = False):       
+        """
+        Not working right now, needs fixing
+
+        Parameters
+        ----------
+        max_processes : TYPE, optional
+            DESCRIPTION. The default is 2.
+        timeout : TYPE, optional
+            DESCRIPTION. The default is 300.
+        sleeptime : TYPE, optional
+            DESCRIPTION. The default is 1.
+        skip_granule_missmatch_error : TYPE, optional
+            DESCRIPTION. The default is False.
+        skip_no_granule_found_error : TYPE, optional
+            DESCRIPTION. The default is False.
+        skip_http_error : TYPE, optional
+            DESCRIPTION. The default is False.
+        skip_multiple_file_on_server_error : TYPE, optional
+            DESCRIPTION. The default is False.
+
+        Returns
+        -------
+        None.
+
+        """
+        
+        iterator = self.itemize()
+        process_this = self.process_single_item           
+        
+        # only if spawning new processes will every thing work well
+        if multiprocessing.get_start_method() != 'spawn':
+            multiprocessing.set_start_method('spawn', force = True)
+            
+        processes = []
+        error_queue = multiprocessing.Queue()
+        while 1:      
+            #### catch errors
+            # catch errors in the individual subprocess, to avoid scenarios where all files are downloaded but not processed
+            # Also, here is the place where certain errors can be filtered out.
+            while not error_queue.empty():
+                e = error_queue.get()
+                do_raise = True
+                msg = False
+                if isinstance(e, GranuleMissmatchError):
+                    if skip_granule_missmatch_error:
+                        do_raise = False
+                        msg = 'GME'
+                elif isinstance(e, NoGranuleFoundError):
+                    if skip_granule_missmatch_error:
+                        do_raise = False
+                        msg = 'NGFE'
+                        
+                if do_raise:
+                    for process in processes:
+                        process.terminate()
+                    raise(e)
+                else:
+                    if msg:
+                        print(msg, end = ' ')
+            
+            #### report current progress
+            if not isinstance(self.reporter, type(None)):
+                self.reporter.log()
+                
+            for process in processes:
+                # process.join(timeout=2)
+                if process.is_alive():
+                    p = psutil.Process(process.pid)
+                    dt_in_sec = (_pd.Timestamp.now(tz = 'utc') - _pd.to_datetime(p.create_time(), unit = 's', utc = True))/ _pd.to_timedelta(1,'s')
+                    assert(dt_in_sec > 0), 'process elaps time is smaller 0, its process creation time is probably not in utc! todo: find out how to determine the timezone that is used by psutil'
+                    # print(dt_in_sec)
+                    if dt_in_sec > timeout:
+                        print(f"Process for number {process.name} exceeded the timeout and will be terminated.")
+                        process.terminate()
+                else:
+                    proc = processes.pop(processes.index(process))
+                    if not isinstance(self.reporter, type(None)):
+                        if proc.exitcode == 0:
+                            self.reporter.clean_increment()
+                        elif proc.exitcode == -15: #process was killed due to timeout. 
+                            self.reporter.errors_increment()
+                        elif proc.exitcode == -9: #process was killed externally, e.g. by the out of memory killer, or someone killed it by hand? 
+                            self.reporter.errors_increment()
+                        elif proc.exitcode == 1: #process generated an exception that should be rison further down
+                            self.reporter.errors_increment()
+                        else:
+                            if not error_queue.empty():
+                                e = error_queue.get()
+                                raise(e)
+                            assert(False), f'exitcode is {proc.exitcode}. What does that mean?'
+                    #### TODO: Test what the result of this process was. If it resulted in an error, make sure you know the error or stopp the entire process!!!
+                
+                
+            if len(processes) >= max_processes:  
+                # print('|', end = '')
+                time.sleep(sleeptime)
+                continue
+            else:
+                try:
+                    arg = next(iterator)
+                    # print(arg)
+                except StopIteration:
+                    # print('reached last number')
+                    if len(processes) == 0:
+                        break
+                    else:         
+                        time.sleep(sleeptime)
+                        continue
+                    
+                process = multiprocessing.Process(target=process_this, 
+                                                  args=(arg,error_queue),  # positional arguments
+                                                  kwargs={'skip_granule_missmatch_error': skip_granule_missmatch_error,
+                                                          'skip_no_granule_found_error': skip_no_granule_found_error,
+                                                          'skip_http_error': skip_http_error,
+                                                          'skip_multiple_file_on_server_error': skip_multiple_file_on_server_error,
+                                                         },  # keyword arguments 
+                                                  name = 'jpssscraper')
+                process.daemon = True
+                processes.append(process)
+                process.start()
+                print('.', end = '')
+                
+        #### final report
+        if not isinstance(self.reporter, type(None)):
+            self.reporter.log(overwrite_reporting_frequency=True)
+  
+class CMRSraperGranuleFuture(CMRSraper):
+    def __init__(self, *args, **kwargs):
+        """
+        A scraper for granuled data like high resolution satellite data. This
+        usually requires the processing one site at a time to avoid downloading to much granules.
+
+        Parameters
+        ----------
+        *args : TYPE
+            DESCRIPTION.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        super().__init__(*args, **kwargs)
+        return        
+    
+    @property
+    def workplan(self):
+        if isinstance(self._workplan, type(None)):
+            #Make the workplan
+            dates = _pd.DataFrame(index = _pd.date_range(self.start, self.end, freq='d', inclusive = 'left'), columns = ['site',])
+
+            for e,site in enumerate(self.sites):
+                dt = dates.copy()
+                # dt['p2f_out'] = dt.apply(lambda row: self.p2fld_out.joinpath(f"{self.prefix}_{self.satellite.replace(' ','')}_{self.sensor}_{self.product}_{site.abb}_{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}.nc"), axis = 1).values
+                dt['p2f_out'] = dt.apply(lambda row: self.p2fld_out.joinpath(self.fn_pattern.format(date = f"site_{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}")), axis = 1).values
+                dt['site'] = site.abb
+                if e == 0:
+                    workplan = dt
+                else:
+                    workplan = _pd.concat([workplan, dt])
+
+            if not self.overwrite:
+                workplan = workplan[~(workplan.apply(lambda row: row.p2f_out.is_file(), axis = 1))]
+                
+            self._workplan = workplan
+        return self._workplan 
+    
+    @workplan.setter
+    def workplan(self,value):
+        self._workplan = value
+        return
+    
+        
+    def itemize(self):
+        return iter(self.workplan.groupby(self.workplan.index))
+    
+    def process_single_item(self, daygroup, 
+                           error_queue = None, 
+                           save = True,
+                           stop_after_first = False,
+                           remove_original_files = True, 
+                           surpress_warnings = True,
+                           verbose = False,
+                            skip_granule_missmatch_error = False,
+                            skip_no_granule_found_error = False,
+                           skip_http_error = False,
+                           skip_multiple_file_on_server_error = False
+                          ):
+        """
+        Processes a single day (based on group_by)
+
+        Parameters
+        ----------
+        daygroup : group element or int
+            if you provide an integer the #ths goup will be processed.
+
+        Returns
+        -------
+        None.
+
+        """   
+        ds = None
+        if surpress_warnings:        
+            _warnings.filterwarnings('ignore')
+        
+        files2remove = []
+        try:
+            if isinstance(daygroup, int):
+                daygroup = list(self.workplan.groupby(self.workplan.index))[daygroup] # 
+            # return daygroup
+        # if 1:
+            if verbose:
+                print('fct call - process_single_day',
+                      # end = ' ... '
+                     )
+            date, dgrp = daygroup
+            for sa, sdf in dgrp.groupby('site'):
+                assert(sdf.shape[0] == 1), 'This should really not be possible [id = 23113122]'
+                # return sdf
+                # search for granule
+                site = [s for s in self.sites if sa == s.abb][0]
+                start = sdf.index[0]
+                self.tp_dt_start = start
+                end = start + _pd.to_timedelta('23:59:59')
+                temporal = f'{start.to_datetime64().astype("datetime64[s]")}Z,{end.to_datetime64().astype("datetime64[s]")}Z'    
+                point = f'{site.lon},{site.lat}'    
+                if verbose:
+                    print('search for granule')
+                data = search_granules(temporal = temporal, point = point, collection_concept_id = self.product_info['collection_concept_id'])
+                # return data
+                assert('errors' not in data), f'Errors encountered in the granula search:\n{data["errors"]}'
+            
+                # make download dataframe
+                entries = data['feed']['entry']
+                self.tp_data = data
+                if len(entries) == 0:
+                    if skip_no_granule_found_error:
+                        print('NGFE', end = ' ')
+                        continue
+                    else:
+                        raise NoGranuleFoundError()
+                df = _pd.DataFrame(entries)
+                df = df.loc[:,['title', 'updated', 'links']]
+                df['name'] = df.apply(lambda row: '.'.join(row['title'].split('.')[:-1]), axis = 1)
+                
+                
+                # assert(_np.all(df.groupby('name').count() == 1)), 'There are multiple files for the same file name (title without generation date). This happens when there are different versions with different updata dates, handle is when it accurse.'
+                
+
+
+                
+                df['url_download'] = df.apply(lambda row: row.links[0]['href'], axis =1)
+                df['p2out'] = df.apply(lambda row: self.p2fld_orig.joinpath(f'{row.url_download.split("/")[-1]}'), axis = 1)
+                df['granule'] = df.apply(lambda row: row.title.split('.')[2], axis = 1)
+                granules = df.granule.copy()
+                # return df, site
+                self.tp_df_pgc = df.copy()
+                self.tp_site = site
+
+
+
+                if self.test_granule:
+                    df = df.where(df.granule == site.earthdata_granule).dropna()
+                    self.tp_df_agc = df.copy()
+                    
+                    if df.shape[0] == 0:
+                        if skip_granule_missmatch_error:
+                            print('GME', end = ' ')
+                            continue
+                        else:
+                            raise GranuleMissmatchError(granules.values, site.earthdata_granule)
+
+                if df.shape[0] > 1: #_np.all(df.groupby('name').count() > 1):
+                    self.tp_df_multifiletest = df.copy()
+                    
+                    assert(_np.all(df.groupby('name').count() > 1)),'if there are mulitple files left, they at least should have the same name but differetn update dates. So this error is unexpected.'
+
+                    if skip_multiple_file_on_server_error:
+                        print('MFOSE', end = ' ')
+                        df= df.sort_values('updated', ascending = False).iloc[[0,]]
+                    else:
+                        raise MultipleFileOnServerError()
+                assert(df.shape[0] == 1), 'There really should only be one file left at this stage.'
+                download_wp = df
+                self.tp_download_wp = download_wp.copy()
+                if verbose:
+                    print(f'download_wp: {download_wp}')
+                    
+                # for idx, row in download_wp.iterrows():
+                row = download_wp.iloc[0]
+                url = row.url_download
+                path2save = row.p2out
+                if path2save.is_file():
+                    if verbose:
+                        print('file exists, skip download')
+                else:
+                    if verbose:
+                        print(f'downloading {url}\nto{path2save}')
+                    try:
+                        glx.scrapers.earthdata.download_url(url, path2save)
+                    except requests.HTTPError as e:
+                        if skip_http_error:
+                            print('HTTPE', end = ' ')
+                            continue
+                        else:
+                            raise
+
+                # return None
+                # Open the file and project
+                ngsinst = ngs.open_file(path2save, verbose=verbose)
+                
+                #remove some variables (before processing) more are removed after processing
+                # for var in ['StartRow', 'StartColumn', 'MeanAOD', 'MeanAODHighQuality']:
+                #     ngsinst.ds = ngsinst.ds.drop_vars(var)
+                    
+                projection = ngsinst.project_on_sites(site)
+                
+                # merge closest gridpoint and area
+                point = projection.projection2point.copy()#.sel(site = 'TBL')
+                
+                point['DQF'] = point.DQF.astype(int) # for some reason this was float64... because there are some nans in there
+                
+                # change var names to distinguish from area
+                if verbose:
+                    print(f'ngsinst.valid_2D_variables: {ngsinst.valid_2D_variables}')
+                for var in ngsinst.valid_2D_variables:
+                    point = point.rename({var: f'{var}_on_pixel',})
+                    if f'{var}_DQF_assessed' in point.variables:
+                        point = point.rename({f'{var}_DQF_assessed': f'{var}_on_pixel_DQF_assessed',})
+                point = point.rename({'DQF': 'DQF_on_pixel'})
+                
+                # merge aerea and point
+                ds = projection.projection2area.merge(point)#.rename({alt_var: f'{alt_var}_on_pixel', 'DQF': 'DQF_on_pixel'}))
+                
+                #remove some variables (after processing) more are removed berfore processing
+                # for var in ['QCExtn', 'QCTest', 'QCInput', 'QCPath', 'QCRet',]:
+                #     ds = ds.drop_vars(var)
+                
+                # add a time stamp
+                # ds = ds.expand_dims({'datetime': [opt]}, )
+                        
+                # global attribute
+                ds.attrs['info'] = ('This file contains a projection of satellite data onto designated measurment sites.\n'
+                                     'It includes the closest pixel data as well as the average over circular\n'
+                                     'areas with various radii. Note, for the averaged data only data is\n'
+                                     'considered with a qulity flag given by the prooduct class in the\n'
+                                     'GeoLeoXtract package.')
+                
+                
+                self.tp_ds = ds
+                
+                #### add awspaths
+                
+                #### add site info to attrs
+                ds.attrs['source'] = url
+                ds.attrs['site_abbreviation'] = site.abb
+                ds.attrs['site_lon'] = float(ds.lon_station)
+                ds.attrs['site_lat'] = float(ds.lat_station)
+                ds.attrs['date processed'] = f'{_pd.Timestamp.now()}'
+
+                if save:
+                    ds.to_netcdf(sdf.iloc[0].p2f_out)
+                #####
+                files2remove.append(path2save)
+
+            # remove the satellite files to preserve storage
+            if remove_original_files:
+                if verbose:
+                    print('The following files will be removed:')
+                    for p2f in files2remove:
+                        print(f'\t{p2f}')
+                for p2f in files2remove:
+                    p2f.unlink()
+                    
+            if self.verbose:
+                print('done')
+        except Exception as e:
+            if verbose:
+                print(e)
+            if isinstance(error_queue, type(None)):
+                raise 
+            error_queue.put(e)
+        return ds
+    
+class CMRSraperGlobal(CMRSraper):
+    def __init__(self, *args, **kwargs):
+        """
+        A scraper for global data like model data, e.g. MERRA, one big 
+        difference is, that sites can be processed simulatiously rather than site by site
+
+        Parameters
+        ----------
+        *args : TYPE
+            DESCRIPTION.
+        **kwargs : TYPE
+            DESCRIPTION.
+
+        Returns
+        -------
+        None.
+
+        """
+        super().__init__(*args, **kwargs)
+        return
+
+    
+    def itemize(self):
+        return self.workplan.iterrows()
+
+    def process_single_item(self, row, 
+                           error_queue = None, 
+                           save = True,
+                           stop_after_first = False,
+                           remove_original_files = True, 
+                           surpress_warnings = True,
+                           verbose = False,
+                           #  skip_granule_missmatch_error = False,
+                           #  skip_no_granule_found_error = False,
+                           skip_http_error = False,
+                           # skip_multiple_file_on_server_error = False
+                          ):
+        """
+        Processes a single day (based on group_by)
+
+        Parameters
+        ----------
+        daygroup : group element or int
+            if you provide an integer the #ths goup will be processed.
+
+        Returns
+        -------
+        None.
+
+        """   
+        #### Download file
+        
+        url = row.url_download
+        path2save = row.p2f_orig
+        if path2save.is_file():
+            if verbose:
+                print('file exists, skip download')
+        else:
+            if verbose:
+                print(f'downloading {url}\nto{path2save}')
+            try:
+                glx.scrapers.earthdata.download_url(url, path2save)
+            except requests.HTTPError as e:
+                if skip_http_error:
+                    print('HTTPE', end = ' ')
+                else:
+                    raise
+        return
+                    
+        
+        

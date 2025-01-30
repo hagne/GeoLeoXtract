@@ -1,200 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Fri Jan 24 15:31:44 2025
+Created on Wed Jan 29 12:34:15 2025
 
-@author: hagen
+@author: htelg
 """
 
 import xarray as _xr
-import magic as _magic
-import pathlib as _pl
-import pyhdf as _pyhdf
-import collections as _collections
 import numpy as _np
-import re as  _re
+import collections as _collections
 import pyproj as _pyproj
+import re as  _re
 import pandas as _pd
+from .opt_imports import pyhdf as _pyhdf
 
-
-import gc
-
-
-from . import nasa_tempo
-from . import satlab
-from . import merra
-
-
-def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, extent = None ,verbose = False):
-    """
-    Open a satellite data file. Probably only works for GOES
-
-    Parameters
-    ----------
-    p2f : string or xarray.Dataset
-        Path to file or a xarray.Dataset.
-    bypass_time_unit_error: bool, optional.
-        In the past some files have an error in the time variable. This allows 
-        you to open it anyway. Also, there are other ways to get the time!
-    extend : list, optional
-        Select a particular area by longitude (lon) and latitude (lat): 
-            [min(lon), max(lon), min(lat), max(lat)]. The default is None.
-    verbose : TYPE, optional
-        DESCRIPTION. The default is False.
-
-    Returns
-    -------
-    classinst : TYPE
-        DESCRIPTION.
-
-    """
-    if isinstance(p2f, _xr.Dataset):
-        ds = p2f
-    else:
-        try:
-            if isinstance(p2f, list):
-                dslist = []
-                for fn in p2f:
-                    # currently this is only used for leo products, will probably cause errors when trying to use for something else
-                    ftype = _magic.detect_from_filename(fn).name
-                    assert(ftype == 'Hierarchical Data Format (version 5) data'), 'Only "Hierarchical Data Format (version 5) data" can be read from a list of files. if you want this to work for other file formats (e.g. HDFv4) ... fix this'
-                    
-                    dst = _xr.open_dataset(fn)
-                    dst = dst.where(~dst.Latitude.isnull(), drop = True)
-                    dst = dst.where(~dst.Longitude.isnull(), drop = True)
-                    dslist.append(dst)
-                ds = _xr.concat(dslist, dim = 'Rows')
-            else:
-                ftype = _magic.detect_from_filename(p2f).name
-                if ftype == 'Hierarchical Data Format (version 5) data':
-                    with _xr.open_dataset(p2f) as ds:
-                        
-                        project = None
-                        if 'project' in ds.attrs:
-                            project = ds.attrs['project'].lower()
-                            
-                        shortname = None
-                        if 'ShortName' in ds.attrs:
-                            shortname = ds.attrs['ShortName']
-                            
-                    if project == 'tempo':
-                        if verbose:
-                            print('NASA Tempo file detected')
-                        si = nasa_tempo.open(p2f)
-                        return si
-                    elif shortname == 'M2T1NXAER':
-                        if verbose:
-                            print('found MERRA-2 M2T1NXAER file')
-                        si = merra.open_M2T1NXAER(p2f)
-                        return si
-                    else:
-                        ds = _xr.open_dataset(p2f)
-            
-                elif ftype == 'Hierarchical Data Format (version 4) data':
-                    if isinstance(p2f, _pl.Path):
-                        p2f = p2f.as_posix()
-                    
-                    hdf=_pyhdf.SD.SD(p2f)
-                    if hdf.attributes()['identifier_product_doi'] == '10.5067/MODIS/MCD19A2.006':
-                        if verbose:
-                            print(f'detected "10.5067/MODIS/MCD19A2.006" product')
-
-                        ds = read_Modis_MCD19A2(hdf)
-                        si = satlab.EOS_AOD(ds, product_version=ds.attrs['version'])
-                        
-                        hdf.end()
-                        del hdf
-                        gc.collect()
-                        
-                        return si
-
-                p2f = [_pl.Path(p2f),]
-        except ValueError as err:
-            if not bypass_time_unit_error:
-                raise
-            else:
-                if 'unable to decode time units' in err.args[0]:
-                    ds = _xr.open_dataset(p2f,decode_times=False,)
-                else:
-                    raise
-    
-    if 'dataset_name' in ds.attrs.keys():    
-        product_name = ds.attrs['dataset_name'].split('_')[1]
-    elif 'title'in [k.lower() for k in ds.attrs.keys()]:   
-        if 'Title' in ds.attrs.keys():
-            ds.attrs['title'] = ds.attrs.pop('Title')
-        # e.g the experimental Surface radiation budget product and NOAA20 products did not have data_set attribute
-        product_name = ds.attrs['title']
-    else:
-        assert(False), 'NetCDF file has no attribute named "dataset_name", or "title"'
-            
-        
-    if verbose:
-        print(f'product name: {product_name}')
-    # if product_name == 'ABI-L2-AODC-M6':
-    #     classinst = ABI_L2_AODC_M6(ds)
-    if not auto_assign_product:
-        classinst = satlab.GeosSatteliteProducts(ds)
-        return classinst
-
-    #### VIRRS products
-    if product_name in ['AEROSOL_AOD_EN', 'JRR-AOD']:
-        pv = _np.unique([float(p.name.split('_')[1][slice(1,4,2)])/10 for p in p2f])
-        assert(len(pv) == 1), f'version of files is different ({pv})'
-        pv = pv[0]
-        if verbose:
-            print(f'Found AEROSOL_AOD_EN version {pv}')
-        classinst = satlab.JRR_AOD(ds, product_version = pv)
-
-    #### ABI products    
-    elif 'ABI-L2-AODC' in product_name:
-        classinst = satlab.ABI_L2_AOD(ds)
-    elif product_name[:-1] == 'ABI-L2-MCMIPC-M':
-        classinst = satlab.ABI_L2_MCMIPC_M6(ds)
-    elif product_name[:-4] == 'ABI-L2-LST':
-        classinst = satlab.ABI_L2_LST(ds)
-        if verbose:
-            print('identified as: ABI-L2-LSTC-M6')
-    elif product_name[:-4] == 'ABI-L2-COD':
-        classinst = satlab.ABI_L2_COD(ds)
-        if verbose:
-            print('identified as: ABI_L2_COD.')
-    elif product_name[:-4] == 'ABI-L2-ACM':
-        classinst = satlab.ABI_L2_ACM(ds)
-        if verbose:
-            print('identified as: ABI_L2_ACM.')
-    elif product_name[:-4] == 'ABI-L2-ADP':
-        classinst = satlab.ABI_L2_ADP(ds)
-        if verbose:
-            print('identified as: ABI_L2_ADP.')
-    elif product_name[:-4] == 'ABI-L2-ACHA':
-        classinst = satlab.ABI_L2_ACHA(ds)
-        if verbose:
-            print('identified as: ABI_L2_ACHA.')
-    elif product_name[:-4] == 'ABI-L2-CTP':
-        classinst = satlab.ABI_L2_CTP(ds)
-        if verbose:
-            print('identified as: ABI_L2_CTP.')
-    elif product_name[:-4] == 'ABI-L2-DSR':
-        classinst = satlab.ABI_L2_DSR(ds)
-        if verbose:
-            print('identified as: ABI_L2_DSR.')
-    elif product_name == 'ABI L2 Shortwave Radiation Budget (SRB)':
-        classinst = satlab.ABI_L2_SRB(ds)
-        if verbose:
-            print('identified as: ABI_L2_DSR.')
-        
-    else:
-        classinst = satlab.GeosSatteliteProducts(ds)
-        if verbose:
-            print('not identified')
-        # assert(False), f'The product {product_name} is not known yet, programming required.'
-    
-    if not isinstance(extent, type(None)):
-        classinst  = classinst.select_area(extent)
-        
-    
-    return classinst
+from . import _pylab
 
 def read_Modis_MCD19A2(hdf):
     """
@@ -396,4 +216,33 @@ def read_Modis_MCD19A2(hdf):
     version = parsed_data['INVENTORYMETADATA']['PGEVERSION']['VALUE']
     ds.attrs['version'] = version
     ds.attrs['dataset_name'] = parsed_data['INVENTORYMETADATA']['LOCALGRANULEID']['VALUE'].split('.')[0]
-    return ds#, hdf, metadata
+    si = EOS_AOD(ds, product_version=ds.attrs['version'])
+    return si #ds#, hdf, metadata
+
+
+
+class EOS_AOD(_pylab.GeosSatteliteProducts):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # self.valid_qf = [0,1]
+        
+        if self.product_info['version'] in ['6.1.19', '6.1.20','6.1.21','6.1.22','6.1.23','6.1.24','6.1.25',]:
+            
+            global_qf = [{'high':   [0], 
+                          # 'medium': [1],
+                          # 'low':    [2],
+                          'bad':    [3]}]
+            self.qf_managment = _pylab.QfManagment(self, 
+                                            qf_representation='as_is', 
+                                            global_qf= global_qf, 
+                                           )
+        # elif self.product_info['version'] in ['M3',]:
+        #     global_qf = [{'high':   [0], 
+        #                   'low': [1],
+        #                   }]
+        #     self.qf_managment = QfManagment(self, 
+        #                                     qf_representation='as_is', 
+        #                                     global_qf= global_qf, 
+        #                                    )
+        else:
+            raise _pylab.GoesExceptionVerionNotRecognized(message = f"Version {self.product_info['version']} not recognized.")

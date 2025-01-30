@@ -36,7 +36,7 @@ class OptionalImport:
 # Creating the pandas facade
 geopandas = OptionalImport('geopandas')
 shapely = OptionalImport('shapely')
-cartopy = OptionalImport('cartopy')
+cartopy = OptionalImport('cartopy', submodules='geodesic')
 Basemap = OptionalImport('mpl_toolkits.basemap.Basemap')
 s3fs = OptionalImport('s3fs')
 pyhdf = OptionalImport('pyhdf', submodules = 'SD')
