@@ -12,6 +12,7 @@ def open_M2T1NXAER(p2f):
     ds = _xr.open_dataset(p2f)
     ds = ds.rename_dims(time = 'datetime')
     ds = ds.rename_vars(time = 'datetime')
+    ds['DQF'] = _xr.zeros_like(ds[max(ds.data_vars, key=lambda var: len(ds[var].dims))])
     si = M2T1NXAER(ds, product_version = ds.attrs['VersionID'])
     return si
     

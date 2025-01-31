@@ -27,7 +27,7 @@ def project_statellite2stations_v01(path2file_in, stations, path2file_out = None
     """
 
     # read the file
-    ngsinst = file_io.open_file(path2file_in)
+    ngsinst = file_io.open_file(path2file_in, verbose = verbose)
     
     # project to stations
     projection = ngsinst.project_on_sites(stations)

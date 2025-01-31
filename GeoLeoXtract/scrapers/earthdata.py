@@ -78,7 +78,7 @@ def search_granules(endpoint = 'https://cmr.earthdata.nasa.gov/search/granules.j
         # 'temporal': '2019-06-02T00:00:00Z,2019-12-02T23:59:59Z',  # Specific date
         'temporal': temporal,  # Specific date
         # 'bounding_box': bbox,  # Global, adjust if necessary
-        'page_size': 10  ,# Number of results to return
+        'page_size': 500  ,# Number of results to return
         # 'day_night_flag': 'both',
         'point': point,
     }
