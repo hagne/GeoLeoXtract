@@ -20,6 +20,7 @@ from . import scrapers
 from . import products
 from . import processing
 from . import file_io_hrrr
+from . import projector
 
 from .file_io import open_file
 # from . import config as _config
@@ -29,16 +30,34 @@ from .file_io import open_file
 import json as _json
 import pathlib as _pl
 
-def _load_config(path2file='~/.GeoLeoXtract', verbose = True):
-    filename = _pl.Path(path2file)
-    filename = filename.expanduser()
-    if filename.is_file():
-        with open(filename, 'r') as file:
-            config = _json.load(file)
-    else:
-        if verbose:
-            print(f'File {filename} not found.')
-        config = None
-    return config
+class Config():
+    def __init__(self):
+        self._values = None
+        return
 
-config = _load_config()
+    @property
+    def values(self):
+        if isinstance(self._values, type(None)):
+# def _load_config(path2file='~/.GeoLeoXtract', verbose = True):
+            path2file='~/.GeoLeoXtract'
+            filename = _pl.Path(path2file)
+            filename = filename.expanduser()
+            if filename.is_file():
+                with open(filename, 'r') as file:
+                    self._values = _json.load(file)
+            else:
+                msg = f"""Configuration file not found          
+Please create  {filename}\n"""
+                msg += """Example file content:
+{
+    "earthdata_credentials": {
+        "username": "yourusername",
+        "password": "your_password",
+    },
+}"""
+                
+                assert(False), msg
+                
+        return self._values
+
+config = Config()

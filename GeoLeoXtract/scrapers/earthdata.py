@@ -68,6 +68,7 @@ def search_granules(endpoint = 'https://cmr.earthdata.nasa.gov/search/granules.j
                     collection_concept_id = 'C2324689816-LPCLOUD',
                     temporal =  '2022-06-02T00:00:00Z,2022-06-02T23:59:59Z',
                     point =  '-105.2705,40.015',
+                    max_number_of_results = 500, 
                     verbose = False):
 
 
@@ -78,7 +79,7 @@ def search_granules(endpoint = 'https://cmr.earthdata.nasa.gov/search/granules.j
         # 'temporal': '2019-06-02T00:00:00Z,2019-12-02T23:59:59Z',  # Specific date
         'temporal': temporal,  # Specific date
         # 'bounding_box': bbox,  # Global, adjust if necessary
-        'page_size': 500  ,# Number of results to return
+        'page_size': max_number_of_results  ,# Number of results to return
         # 'day_night_flag': 'both',
         'point': point,
     }
@@ -114,8 +115,8 @@ class SessionWithHeaderRedirection(requests.Session):
         return
 
 def download_url(url, path2save):
-    session = SessionWithHeaderRedirection(glx.config['earthdata_credentials']['username'],
-                                           glx.config['earthdata_credentials']['password'])
+    session = SessionWithHeaderRedirection(glx.config.values['earthdata_credentials']['username'],
+                                           glx.config.values['earthdata_credentials']['password'])
     
     # submit the request using the session
     response = session.get(url, stream=True)
@@ -547,7 +548,8 @@ class CMRSraper(object):
                  prefix = 'projected2surfrad',
                  reporter = None,
                  overwrite = False, 
-                 verbose = False):
+                 verbose = False,
+                 test = False):
         """
         Downloads the product in the given time window. If the data is tiled 
         it will only download tiles with sites on them.
@@ -576,6 +578,9 @@ class CMRSraper(object):
             DESCRIPTION. The default is False.
         verbose : TYPE, optional
             DESCRIPTION. The default is False.
+        test:
+            Options:
+                "full": test each step of the process, but it limits the size of the workplan
 
         Returns
         -------
@@ -591,6 +596,7 @@ class CMRSraper(object):
         self.prefix = prefix
         # self.sensor = sensor
         self.product=product
+        self.test = test
         try:
             self.product_info = [i for i in product_info if i['name'] == product][0]
         except IndentationError:
@@ -648,19 +654,25 @@ class CMRSraper(object):
             df.index = df.apply(lambda row:_pd.to_datetime(row.time_start).tz_localize(None), axis = 1)
             
             # df['p2f_out'] = df.apply(lambda row: self.p2fld_out.joinpath('_'.join([self.product, self.prefix, f'{row.name.year:04d}{row.name.month:02d}{row.name.day:02d}']) + '.nc'), axis = 1)
+            if self.test == 'full':
+                df = df.iloc[:2]
             self._masterplan = df
             
         return self._masterplan
     
     @property
     def workplan(self):
-        wp = self.masterplan[~(self.masterplan.apply(lambda row: row.p2f_orig.is_file(), axis = 1))]
+        wp = self.masterplan
+        if not self.overwrite:
+            wp = wp[~(wp.apply(lambda row: row.p2f_orig.is_file(), axis = 1))]
         wp = wp.loc[:,['url_download', 'p2f_orig']]
         return wp
 
     def process(self):
         for idx, row in self.itemize():
             self.process_single_item(row)
+
+            
         
     def process_multi(self, max_processes = 2, timeout = 300, sleeptime = 1, 
                 skip_granule_missmatch_error = False,
@@ -1091,7 +1103,7 @@ class CMRSraperGlobal(CMRSraper):
                            # skip_multiple_file_on_server_error = False
                           ):
         """
-        Processes a single day (based on group_by)
+        Processes a single chunck 
 
         Parameters
         ----------

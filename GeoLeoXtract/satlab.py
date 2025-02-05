@@ -1,10 +1,11 @@
 import xarray as _xr
 import pathlib as _pl
 import numpy as _np
-import magic as _magic
-import collections as _collections
+# import magic as _magic
+# import collections as _collections
 import pyproj as _pyproj
-import re as  _re
+# import re as  _re
+
 # import cartopy.crs as ccrs
 # import metpy 
 # from scipy import interpolate
@@ -31,9 +32,10 @@ from .opt_imports import shapely
 from .opt_imports import cartopy
 from .opt_imports import Basemap as _Basemap
 from .opt_imports import s3fs as _s3fs
-from .opt_imports import pyhdf as _pyhdf
+# from .opt_imports import pyhdf as _pyhdf
 
-import gc
+# import gc
+
 
 
 # def open_file(p2f, auto_assign_product = True, bypass_time_unit_error = True, extent = None ,verbose = False):
@@ -825,7 +827,7 @@ class Concatonator(object):
             print('Done')
         return ds
     
-           
+
 
 class SatelliteMovie(object):
     def __init__(self, 
@@ -1298,7 +1300,8 @@ class GeosSatteliteProducts(object):
                 var_sel.pop(var_sel.index('lat'))
             
         elif self.grid_type == 'lonlat':
-            var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('lat', 'lon')]
+            # var_sel = [var for var in self.ds.variables if self.ds[var].dims == ('lat', 'lon')] # this does not allow for an additional datetime coordinate
+            var_sel = [var for var in self.ds.variables if ('lat' in self.ds[var].dims) and ('lon' in self.ds[var].dims)]
             var_sel = [var for var in var_sel if not 'DQF' in var]
         else:
             assert(False), 'moep'
@@ -1840,9 +1843,10 @@ class Grid2SiteProjection(object):
                     where = ds_at_sites.DQF.isin(qf_by_variable[var]['low'])
                     dsdqfass = dsdqfass.where(~where, other = 2)
                     
-                # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])] = 3
-                where = ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])
-                dsdqfass = dsdqfass.where(~where, other = 3)
+                if 'bad' in qf_by_variable[var].keys():
+                    # dsdqfass[ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])] = 3
+                    where = ds_at_sites.DQF.isin(qf_by_variable[var]['bad'])
+                    dsdqfass = dsdqfass.where(~where, other = 3)
                 
                 # add some attributes
                 dsdqfass.attrs = {}
