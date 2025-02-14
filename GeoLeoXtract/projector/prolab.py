@@ -94,7 +94,7 @@ class ChunckProcessor(object):
             mp['p2f_out'] = mp.apply(lambda row: self.p2fld_out.joinpath(f'{self.scraper_kwargs['product']}_{self.name_addon}_{get_date(row)}.nc'), axis =1)
             end_time = mp.index[1:]
             mp = mp.iloc[:-1]
-            mp['end_time'] = end_time
+            mp['end_time'] = end_time - _pd.to_timedelta(1,'ns') #subtracting a nanosecond ensures that the interval is open on the right
             mp = mp.loc[:, ['end_time', 'p2f_out']]
 
             if self.test == 'full':
@@ -103,6 +103,10 @@ class ChunckProcessor(object):
             self._masterplan = mp
             
         return self._masterplan
+    
+    @masterplan.setter 
+    def masterplan(self, value):
+        self._masterplan = value
 
     @property
     def workplan(self):
@@ -110,10 +114,34 @@ class ChunckProcessor(object):
         if not self.overwrite:
             wp = wp[~wp.apply(lambda row: row.p2f_out.is_file(), axis = 1)]
         return wp
+    
+    @workplan.setter 
+    def workplan(self, value):
+        assert(False), 'workplan can not be set, alter the masterplan instead'
 
     def process_item(self, row, test = False, verbose = True):
+        """
+        
+
+        Parameters
+        ----------
+        row : row
+            A single row of the workplan. e.g. self.workplan.iloc[0]
+        test : str, ['scraper']
+            This will generate some test scenarios:
+                scraper: This will return the initiated scraper. Allows you to 
+                    see what will be downloaded for this particular step
+        verbose : TYPE, optional
+            DESCRIPTION. The default is True.
+
+        Returns
+        -------
+        TYPE
+            DESCRIPTION.
+
+        """
         scraper = self.scraper(start = row.name, end = row.end_time, **self.scraper_kwargs)
-        if test == 'wp':
+        if test == 'scraper':
             return scraper
         
         #### download all relevant files
@@ -131,6 +159,9 @@ class ChunckProcessor(object):
                                               # test = True, 
                                               # verbose = True
                                            )
+            print(f'Is file still connected: {si.ds.encoding.get("source", None)}')
+            si.ds.close()
+            print(f'Is file still connected: {si.ds.encoding.get("source", None)}')
             ds_list.append(ds)
         
         dsa = _xr.concat(ds_list, 'datetime')
