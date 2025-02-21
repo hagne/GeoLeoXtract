@@ -159,9 +159,9 @@ class ChunckProcessor(object):
                                               # test = True, 
                                               # verbose = True
                                            )
-            print(f'Is file still connected: {si.ds.encoding.get("source", None)}')
+            # print(f'Is file still connected: {si.ds.encoding.get("source", None)}')
             si.ds.close()
-            print(f'Is file still connected: {si.ds.encoding.get("source", None)}')
+            # print(f'Is file still connected: {si.ds.encoding.get("source", None)}')
             ds_list.append(ds)
         
         dsa = _xr.concat(ds_list, 'datetime')
